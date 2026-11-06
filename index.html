@@ -1,0 +1,571 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light}html,body{margin:0}</style></head><body>
+<title>Chrono Sprint</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap">
+<style>
+/* Layout: une colonne de piste. Le chrono occupe le haut, la séance et les réglages se rangent dessous. */
+:root {
+  --bg: #ECEFF1;
+  --surface: #FFFFFF;
+  --ink: #0E1B24;
+  --ink-2: #4B5B67;
+  --line: #D2D9DE;
+  --accent: #E8431A;
+  --on-accent: #FFFFFF;
+  --fast: #1D5FD1;
+  --keep: #167A3B;
+  --slow: #C01D4E;
+  --warn: #B45309;
+  --f-display: 'Barlow Condensed', 'Arial Narrow', system-ui, sans-serif;
+  --f-body: 'Barlow', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0B141B; --surface: #131F28; --ink: #E8EEF2; --ink-2: #9BABB7; --line: #263541;
+    --accent: #FF6A33; --on-accent: #1B0A03; --fast: #6AA2FF; --keep: #4CC77A; --slow: #FF6B8F; --warn: #F5B04A;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0B141B; --surface: #131F28; --ink: #E8EEF2; --ink-2: #9BABB7; --line: #263541;
+  --accent: #FF6A33; --on-accent: #1B0A03; --fast: #6AA2FF; --keep: #4CC77A; --slow: #FF6B8F; --warn: #F5B04A;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 16px/1.45 var(--f-body);
+  padding-block: 16px 40px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.app { max-width: 520px; margin: 0 auto; display: grid; gap: 16px; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.brand { margin: 0; font: 700 24px/1 var(--f-display); letter-spacing: .08em; text-transform: uppercase; }
+.gps { display: inline-flex; align-items: center; gap: 8px; padding: 7px 11px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface);
+  font: 600 12px/1 var(--f-body); letter-spacing: .05em; text-transform: uppercase; color: var(--ink-2); }
+.gps i { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-2); flex: none; }
+.gps[data-state="ok"] i { background: var(--keep); }
+.gps[data-state="wait"] i { background: var(--warn); }
+.gps[data-state="bad"] i { background: var(--slow); }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
+.live { display: grid; gap: 4px; }
+.meta { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.eyebrow { font: 600 13px/1.2 var(--f-body); letter-spacing: .09em; text-transform: uppercase; color: var(--ink-2); }
+.target { font: 600 17px/1.2 var(--f-body); font-variant-numeric: tabular-nums; }
+.clock { display: block; text-align: center; font: 700 clamp(92px, 31vw, 138px)/.95 var(--f-display); font-variant-numeric: tabular-nums;
+  letter-spacing: -.01em; padding: 10px 0 2px; }
+.clock[data-phase="countdown"] { color: var(--accent); }
+.track { position: relative; height: 30px; margin: 10px 9px 0; }
+.track::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 4px; margin-top: -2px; border-radius: 2px;
+  background: repeating-linear-gradient(90deg, var(--line) 0 10px, transparent 10px 16px); }
+.track::after { content: ""; position: absolute; right: -1px; top: 3px; bottom: 3px; width: 3px; border-radius: 1px; background: var(--ink); }
+.mk { position: absolute; top: 50%; left: 0; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; }
+.ghost { border: 2px solid var(--ink); background: var(--surface); }
+.runner { background: var(--accent); }
+.ends { display: flex; justify-content: space-between; margin: 4px 9px 0; font: 500 13px/1 var(--f-body); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.legend { display: flex; gap: 16px; margin-top: 10px; font: 500 13px/1 var(--f-body); color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+.legend .l-ghost { border: 2px solid var(--ink); }
+.legend .l-run { background: var(--accent); }
+.status { margin: 12px 0 14px; min-height: 2.9em; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.main { width: 100%; height: 68px; border: 0; border-radius: 12px; background: var(--accent); color: var(--on-accent); cursor: pointer;
+  font: 700 28px/1 var(--f-display); letter-spacing: .07em; text-transform: uppercase; }
+.main[data-phase="countdown"] { background: transparent; color: var(--ink); border: 2px solid var(--ink); }
+.main[data-phase="running"] { background: var(--ink); color: var(--bg); }
+.main[data-phase="done"], .main[data-phase="finished"] { background: var(--ink); color: var(--bg); }
+.main:active { transform: translateY(1px); }
+
+.verdict { display: grid; gap: 10px; }
+.v-word { margin: 0; font: 700 clamp(40px, 12vw, 54px)/1 var(--f-display); letter-spacing: .02em; text-transform: uppercase; }
+.verdict[data-kind="keep"] .v-word { color: var(--keep); }
+.verdict[data-kind="slow"] .v-word { color: var(--slow); }
+.verdict[data-kind="fast"] .v-word { color: var(--fast); }
+.v-line { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.v-time { font: 700 34px/1 var(--f-display); font-variant-numeric: tabular-nums; }
+.chip { display: inline-block; padding: 4px 9px; border-radius: 999px; font: 600 14px/1.2 var(--f-body); font-variant-numeric: tabular-nums;
+  background: color-mix(in srgb, var(--c, var(--ink-2)) 14%, transparent); color: var(--c, var(--ink-2)); white-space: nowrap; }
+.chip[data-kind="keep"] { --c: var(--keep); }
+.chip[data-kind="slow"] { --c: var(--slow); }
+.chip[data-kind="fast"] { --c: var(--fast); }
+.v-note { margin: 0; color: var(--ink-2); max-width: 46ch; }
+.rest { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.rest b { font: 700 30px/1 var(--f-display); font-variant-numeric: tabular-nums; }
+
+h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text-transform: uppercase; }
+.sec-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.link { background: none; border: 0; padding: 8px 4px; color: var(--ink-2); font: 600 14px/1 var(--f-body); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.gen { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; align-items: end; margin-bottom: 8px; }
+.gen .go { grid-column: 1 / -1; }
+.field { display: grid; gap: 4px; min-width: 0; }
+.field label, .cols span { font: 600 12px/1.2 var(--f-body); letter-spacing: .07em; text-transform: uppercase; color: var(--ink-2); }
+.in { width: 100%; height: 44px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink);
+  font: 500 16px/1 var(--f-body); font-variant-numeric: tabular-nums; }
+.in:disabled { opacity: .55; }
+.btn { height: 44px; padding: 0 14px; border: 1px solid var(--ink); border-radius: 8px; background: transparent; color: var(--ink); cursor: pointer; font: 600 15px/1 var(--f-body); }
+.btn:disabled { opacity: .5; cursor: default; }
+.cols, .row { display: grid; grid-template-columns: 24px 72px 72px minmax(0, 1fr) 36px; gap: 8px; align-items: center; }
+.cols { margin: 14px 0 6px; }
+.row { padding: 5px 0; border-top: 1px solid var(--line); }
+.row[data-current="true"] { background: color-mix(in srgb, var(--accent) 9%, transparent); margin-inline: -8px; padding-inline: 8px; border-radius: 8px; }
+.idx { font: 700 18px/1 var(--f-display); color: var(--ink-2); text-align: center; }
+.res { text-align: right; min-width: 0; }
+.x { width: 36px; height: 36px; border: 0; background: none; color: var(--ink-2); font-size: 22px; line-height: 1; cursor: pointer; border-radius: 8px; }
+.x:disabled { opacity: .35; cursor: default; }
+.add { margin-top: 10px; width: 100%; }
+
+.set { display: grid; gap: 14px; }
+.seg { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin: 0; padding: 0; }
+.seg label { display: block; text-align: center; padding: 12px 8px; font: 600 15px/1 var(--f-body); cursor: pointer; color: var(--ink-2); }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg input:checked + span { color: var(--on-accent); }
+.seg label:has(input:checked) { background: var(--accent); color: var(--on-accent); }
+.seg label:has(input:focus-visible) { outline: 3px solid var(--ink); outline-offset: -3px; }
+.nums { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.hint { margin: 0; font-size: 14px; color: var(--ink-2); max-width: 52ch; }
+.check { display: flex; align-items: center; gap: 10px; font-weight: 500; }
+.check input { width: 22px; height: 22px; accent-color: var(--accent); }
+</style>
+
+<main class="app">
+  <header class="top">
+    <h1 class="brand">Chrono Sprint</h1>
+    <span class="gps" id="gps" data-state="off"><i></i><span id="gpsText">Mode manuel</span></span>
+  </header>
+
+  <section class="card live" aria-label="Série en cours">
+    <div class="meta">
+      <span class="eyebrow" id="repLabel">Série 1 / 6</span>
+      <span class="target" id="repTarget">60 m · cible 8,50 s</span>
+    </div>
+    <output class="clock" id="clock" data-phase="idle">0,00</output>
+    <div class="track" id="track" aria-hidden="true">
+      <span class="mk ghost" id="ghost"></span>
+      <span class="mk runner" id="runner" hidden></span>
+    </div>
+    <div class="ends" aria-hidden="true"><span>0</span><span id="endLbl">60 m</span></div>
+    <div class="legend" aria-hidden="true">
+      <span id="lgRun" hidden><i class="l-run"></i>Toi</span>
+      <span><i class="l-ghost"></i>Allure cible</span>
+    </div>
+    <p class="status" id="status" aria-live="polite">Place-toi derrière la ligne, puis touche Départ.</p>
+    <button class="main" id="main" type="button" data-phase="idle">Départ</button>
+  </section>
+
+  <section class="card verdict" id="verdict" aria-live="polite" hidden>
+    <span class="eyebrow" id="vEyebrow">Résultat</span>
+    <p class="v-word" id="vWord"></p>
+    <div class="v-line"><span class="v-time" id="vTime"></span><span class="chip" id="vDelta"></span></div>
+    <p class="v-note" id="vNote"></p>
+    <div class="rest" id="rest" hidden><span class="eyebrow" id="restLbl">Récupération</span><b id="restClock">2:00</b></div>
+  </section>
+
+  <section class="card" aria-label="Séance">
+    <div class="sec-head">
+      <h2>Séance</h2>
+      <button class="link" id="reset" type="button">Effacer les résultats</button>
+    </div>
+    <div class="gen">
+      <div class="field"><label for="gReps">Séries</label><input class="in" id="gReps" inputmode="numeric" value="6"></div>
+      <div class="field"><label for="gDist">Distance (m)</label><input class="in" id="gDist" inputmode="decimal" value="60"></div>
+      <div class="field"><label for="gTime">Cible (s)</label><input class="in" id="gTime" inputmode="decimal" value="8,50"></div>
+      <button class="btn go" id="gen" type="button">Créer la séance (remplace la liste)</button>
+    </div>
+    <div class="cols" aria-hidden="true"><span></span><span>Dist. m</span><span>Cible s</span><span style="text-align:right">Résultat</span><span></span></div>
+    <div id="rows"></div>
+    <button class="btn add" id="add" type="button">Ajouter une série</button>
+  </section>
+
+  <section class="card set" aria-label="Réglages">
+    <h2>Réglages</h2>
+    <fieldset class="seg" id="modeSeg">
+      <legend style="position:absolute;left:-9999px">Mesure de la distance</legend>
+      <label><input type="radio" name="mode" value="gps"><span>GPS</span></label>
+      <label><input type="radio" name="mode" value="manual"><span>Manuel</span></label>
+    </fieldset>
+    <p class="hint" id="modeHint"></p>
+    <div class="nums">
+      <div class="field"><label for="sCd">Départ (s)</label><input class="in" id="sCd" inputmode="numeric"></div>
+      <div class="field"><label for="sRest">Récup (s)</label><input class="in" id="sRest" inputmode="numeric"></div>
+      <div class="field"><label for="sTol">Marge (%)</label><input class="in" id="sTol" inputmode="decimal"></div>
+    </div>
+    <label class="check" for="sVoice"><input type="checkbox" id="sVoice">Annoncer le temps et le conseil à voix haute</label>
+    <p class="hint">Le chrono démarre au gros bip. Si ton temps est dans la marge autour de la cible, l'appli dit de garder l'allure. Au-dessus, plus vite. En dessous, moins vite.</p>
+  </section>
+</main>
+
+<script>
+(function () {
+  var $ = function (s) { return document.querySelector(s); };
+  var num = function (v) { var x = parseFloat(String(v).replace(',', '.')); return isFinite(x) ? x : NaN; };
+  var nf = function (x, d) { return x.toFixed(d == null ? 2 : d).replace('.', ','); };
+  var fmtT = function (t) { if (t >= 60) { var m = Math.floor(t / 60), s = t - m * 60; return m + ':' + (s < 10 ? '0' : '') + nf(s); } return nf(t); };
+  var fmtM = function (s) { s = Math.max(0, Math.ceil(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+  var sgn = function (x) { return (x > 0.004 ? '+' : x < -0.004 ? '−' : '±') + nf(Math.abs(x)); };
+  var kmh = function (d, t) { return d / t * 3.6; };
+
+  var KEY = 'chrono-sprint.v1';
+  var store = {
+    get: function () { try { return JSON.parse(localStorage.getItem(KEY)); } catch (e) { return null; } },
+    set: function (v) { try { localStorage.setItem(KEY, JSON.stringify(v)); } catch (e) {} }
+  };
+  var S = { reps: [], rest: 120, countdown: 3, tol: 2, mode: 'manual', voice: true };
+  for (var i = 0; i < 6; i++) S.reps.push({ d: 60, t: 8.5 });
+  var saved = store.get();
+  if (saved && typeof saved === 'object') {
+    ['rest', 'countdown', 'tol', 'mode', 'voice'].forEach(function (k) { if (saved[k] != null) S[k] = saved[k]; });
+    if (Array.isArray(saved.reps) && saved.reps.length && saved.reps.every(function (r) { return r && r.d > 0 && r.t > 0; })) S.reps = saved.reps;
+  }
+  var save = function () { store.set(S); };
+
+  var phase = 'idle', cur = 0, results = [], t0 = 0, raf = 0, cdT = 0, restT = 0;
+  var R = function () { return S.reps[cur]; };
+
+  /* Son */
+  var ac = null;
+  function ensureAudio() {
+    try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === 'suspended') ac.resume(); } catch (e) {}
+  }
+  function tone(freq, dur, vol, type, when) {
+    if (!ac) return;
+    try {
+      var t = ac.currentTime + (when || 0), o = ac.createOscillator(), g = ac.createGain();
+      o.type = type || 'square'; o.frequency.value = freq;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol, t + 0.01);
+      g.gain.setValueAtTime(vol, t + dur - 0.05);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t + dur + 0.03);
+    } catch (e) {}
+  }
+  var tickBeep = function () { tone(660, 0.13, 0.5, 'sine'); };
+  var startBeep = function () { tone(1000, 0.9, 0.7, 'square'); tone(1500, 0.9, 0.22, 'square'); };
+  var endBeep = function () { tone(1400, 0.9, 0.7, 'square'); tone(2100, 0.9, 0.22, 'square'); };
+  function say(text) {
+    if (!S.voice) return;
+    try { var u = new SpeechSynthesisUtterance(text); u.lang = 'fr-FR'; u.rate = 1.05; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch (e) {}
+  }
+
+  /* Écran allumé pendant la séance */
+  var wl = null;
+  function wake() { try { if (navigator.wakeLock && !wl) navigator.wakeLock.request('screen').then(function (l) { wl = l; l.addEventListener('release', function () { wl = null; }); }, function () {}); } catch (e) {} }
+  function unwake() { try { if (wl) wl.release(); } catch (e) {} wl = null; }
+
+  /* GPS */
+  var gps = { id: null, last: null, prev: null, dist: 0, err: false };
+  function setPill(state, text) { $('#gps').dataset.state = state; $('#gpsText').textContent = text; }
+  function idlePill() { setPill('off', S.mode === 'gps' ? 'GPS prêt' : 'Mode manuel'); }
+  function hav(a, b) {
+    var R0 = 6371000, r = Math.PI / 180, dLa = (b.lat - a.lat) * r, dLo = (b.lon - a.lon) * r;
+    var x = Math.sin(dLa / 2) * Math.sin(dLa / 2) + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLo / 2) * Math.sin(dLo / 2);
+    return 2 * R0 * Math.asin(Math.sqrt(x));
+  }
+  function startGps() {
+    gps.err = false; gps.last = null; gps.prev = null; gps.dist = 0;
+    if (!('geolocation' in navigator)) { gpsFail('GPS indisponible'); return; }
+    setPill('wait', 'GPS : recherche');
+    clearTimeout(gps.timer);
+    gps.timer = setTimeout(function () { if (!gps.last) gpsFail('GPS bloqué ici'); }, 6000);
+    try { gps.id = navigator.geolocation.watchPosition(onPos, onGpsErr, { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }); }
+    catch (e) { gpsFail('GPS indisponible'); }
+  }
+  function stopGps() { clearTimeout(gps.timer); if (gps.id != null) { try { navigator.geolocation.clearWatch(gps.id); } catch (e) {} gps.id = null; } }
+  function onGpsErr(e) { gpsFail(e && e.code === 1 ? 'GPS refusé' : 'GPS indisponible'); }
+  function gpsFail(msg) {
+    gps.err = true; stopGps(); setPill('bad', msg);
+    if (phase === 'countdown' || phase === 'running') $('#status').textContent = msg + '. Touche Arrivée quand tu passes la ligne.';
+    if (phase === 'running') $('#runner').hidden = true;
+  }
+  /* Heure du relevé GPS, ramenée à l'horloge du chrono */
+  function fixTime(p) { var t = performance.now(), d = p.timestamp - Date.now(); return (isFinite(d) && Math.abs(d) < 3000) ? t + d : t; }
+  /* Distance parcourue après tau secondes, à vitesse v et accélération a */
+  function distAt(v, a, tau) { return v * tau + a * tau * tau / 2; }
+  /* Temps nécessaire pour parcourir rem mètres */
+  function solveTau(v, a, rem) {
+    if (Math.abs(a) < 1e-3) return v > 0 ? rem / v : Infinity;
+    var disc = v * v + 2 * a * rem;
+    if (disc < 0) return Infinity;
+    var tau = (-v + Math.sqrt(disc)) / a;
+    return tau >= 0 ? tau : Infinity;
+  }
+  /* La distance vient de la vitesse mesurée (Doppler), bien plus stable que la différence de positions.
+     Sans vitesse fournie par le téléphone, on se rabat sur les positions. */
+  function onPos(p) {
+    var c = p.coords;
+    var fix = { lat: c.latitude, lon: c.longitude, acc: c.accuracy, t: fixTime(p), v: (c.speed != null && isFinite(c.speed) && c.speed >= 0) ? c.speed : null };
+    gps.last = fix;
+    setPill(fix.acc <= 25 ? 'ok' : 'wait', 'GPS ±' + Math.round(fix.acc) + ' m' + (fix.v != null ? ' · vitesse' : ''));
+    if (phase !== 'running' || fix.acc > 60) return;
+    var pv = gps.prev;
+    if (!pv) { gps.prev = { lat: fix.lat, lon: fix.lon, t: fix.t, v: fix.v || 0, dist: 0, a: 0 }; return; }
+    if (fix.t <= pv.t + 20) return;
+    var dt = (fix.t - pv.t) / 1000, v1 = fix.v, step;
+    if (v1 != null) { step = (pv.v + v1) / 2 * dt; }
+    else {
+      var posStep = pv.lat == null ? 0 : hav(pv, fix);
+      v1 = Math.min(posStep / dt, 14); step = posStep;
+    }
+    var a = (v1 - pv.v) / dt, target = R().d;
+    if (pv.dist + step >= target) {
+      var tau = solveTau(pv.v, a, target - pv.dist);
+      finish(Math.max(0.01, (pv.t + (isFinite(tau) ? tau * 1000 : dt * 1000) - t0) / 1000), 'gps');
+      return;
+    }
+    gps.prev = { lat: fix.lat, lon: fix.lon, t: fix.t, v: v1, dist: pv.dist + step, a: Math.max(-4, Math.min(6, a)) * 0.5 };
+    gps.dist = gps.prev.dist;
+  }
+
+  /* Verdict */
+  function judge(time, target) {
+    var delta = time - target, pct = delta / target * 100;
+    var kind = Math.abs(pct) <= S.tol ? 'keep' : (delta > 0 ? 'slow' : 'fast');
+    return { delta: delta, kind: kind };
+  }
+  var WORD = { keep: "Garde l'allure", slow: 'Va plus vite', fast: 'Moins vite' };
+  var SPOKEN = { keep: "Garde l'allure", slow: 'Va plus vite', fast: 'Un peu moins vite' };
+
+  /* Affichage */
+  function setMarkers(ghostP, runnerP) {
+    $('#ghost').style.left = (Math.min(1, Math.max(0, ghostP)) * 100) + '%';
+    var rn = $('#runner');
+    if (runnerP == null) { rn.hidden = true; } else { rn.hidden = false; rn.style.left = (Math.min(1, Math.max(0, runnerP)) * 100) + '%'; }
+  }
+  function showsRunner() { return S.mode === 'gps' && !gps.err; }
+  function updateAll() {
+    var n = S.reps.length, r = R() || S.reps[0];
+    var inRun = phase === 'countdown' || phase === 'running';
+    $('#repLabel').textContent = phase === 'finished' ? 'Séance terminée' : 'Série ' + (cur + 1) + ' / ' + n;
+    $('#repTarget').textContent = nf(r.d, r.d % 1 ? 1 : 0) + ' m · cible ' + fmtT(r.t) + ' s';
+    $('#endLbl').textContent = nf(r.d, r.d % 1 ? 1 : 0) + ' m';
+    $('#lgRun').hidden = !showsRunner();
+    var labels = { idle: 'Départ', countdown: 'Annuler', running: 'Arrivée', done: cur < n - 1 ? 'Série suivante' : 'Terminer la séance', finished: 'Recommencer' };
+    var m = $('#main'); m.textContent = labels[phase]; m.dataset.phase = phase;
+    $('#clock').dataset.phase = phase;
+    ['gReps', 'gDist', 'gTime', 'gen', 'add', 'reset'].forEach(function (id) { $('#' + id).disabled = inRun; });
+    S.reps.forEach(function (rep, i) {
+      var row = $('.row[data-i="' + i + '"]'); if (!row) return;
+      row.dataset.current = (i === cur && phase !== 'finished') ? 'true' : 'false';
+      row.querySelectorAll('input,button').forEach(function (el) { el.disabled = inRun; });
+      var box = $('#r' + i), res = results[i];
+      if (res) {
+        var j = judge(res.time, res.target);
+        box.innerHTML = '<span class="chip" data-kind="' + j.kind + '">' + fmtT(res.time) + ' s · ' + sgn(j.delta) + '</span>';
+      } else { box.textContent = ''; }
+    });
+  }
+  function setClock(t) { $('#clock').textContent = fmtT(t); }
+  function resetClock() { setClock(0); setMarkers(0, showsRunner() ? 0 : null); }
+
+  function renderPlan() {
+    var box = $('#rows'); box.innerHTML = '';
+    S.reps.forEach(function (r, i) {
+      var row = document.createElement('div'); row.className = 'row'; row.dataset.i = i;
+      row.innerHTML = '<span class="idx">' + (i + 1) + '</span>' +
+        '<input class="in" id="d' + i + '" inputmode="decimal" aria-label="Distance de la série ' + (i + 1) + ' en mètres" value="' + String(r.d).replace('.', ',') + '">' +
+        '<input class="in" id="t' + i + '" inputmode="decimal" aria-label="Temps cible de la série ' + (i + 1) + ' en secondes" value="' + nf(r.t) + '">' +
+        '<span class="res" id="r' + i + '"></span>' +
+        '<button class="x" type="button" aria-label="Supprimer la série ' + (i + 1) + '">×</button>';
+      box.appendChild(row);
+      row.querySelector('#d' + i).addEventListener('change', function (e) {
+        var v = num(e.target.value);
+        if (v > 0) { S.reps[i].d = v; save(); } else e.target.value = String(S.reps[i].d).replace('.', ',');
+        updateAll();
+      });
+      row.querySelector('#t' + i).addEventListener('change', function (e) {
+        var v = num(e.target.value);
+        if (v > 0) { S.reps[i].t = v; save(); e.target.value = nf(v); } else e.target.value = nf(S.reps[i].t);
+        updateAll();
+      });
+      row.querySelector('.x').addEventListener('click', function () {
+        if (S.reps.length < 2) return;
+        S.reps.splice(i, 1); save(); fullReset();
+      });
+    });
+    updateAll();
+  }
+
+  /* Déroulé d'une série */
+  function startCountdown() {
+    ensureAudio(); wake();
+    phase = 'countdown';
+    $('#verdict').hidden = true;
+    if (S.mode === 'gps') startGps(); else setPill('off', 'Mode manuel');
+    resetClock(); updateAll();
+    $('#status').textContent = S.countdown > 0 ? 'Prépare-toi. Le chrono démarre au gros bip.' : '';
+    var n = S.countdown;
+    (function tick() {
+      if (phase !== 'countdown') return;
+      if (n > 0) { $('#clock').textContent = n; tickBeep(); n--; cdT = setTimeout(tick, 1000); }
+      else go();
+    })();
+  }
+  function cancelCountdown() {
+    clearTimeout(cdT); stopGps(); phase = 'idle'; idlePill(); resetClock(); updateAll();
+    $('#status').textContent = 'Départ annulé.';
+  }
+  function go() {
+    phase = 'running';
+    startBeep();
+    t0 = performance.now();
+    gps.dist = 0; gps.est = 0; gps.prev = null;
+    if (S.mode === 'gps' && !gps.err) {
+      var gl = gps.last && performance.now() - gps.last.t < 4000 ? gps.last : null;
+      gps.prev = { lat: gl ? gl.lat : null, lon: gl ? gl.lon : null, t: t0, v: 0, dist: 0, a: 0 };
+    }
+    updateAll();
+    $('#status').textContent = S.mode === 'gps' && !gps.err ? 'Cours !' : 'Cours ! Touche Arrivée à la ligne.';
+    loop();
+  }
+  function loop() {
+    if (phase !== 'running') return;
+    var el = (performance.now() - t0) / 1000, r = R();
+    setClock(el);
+    var ghostP = el / r.t;
+    if (showsRunner() && gps.prev) {
+      /* Entre deux relevés GPS (environ 1 par seconde), la position est estimée à partir de la dernière vitesse. */
+      var pv = gps.prev, age = (performance.now() - pv.t) / 1000;
+      var est = pv.dist + distAt(pv.v, pv.a, Math.max(0, Math.min(age, 2.5)));
+      gps.est = est;
+      if (est >= r.d) {
+        var tc = pv.t + solveTau(pv.v, pv.a, r.d - pv.dist) * 1000;
+        finish(Math.max(0.01, ((isFinite(tc) ? tc : performance.now()) - t0) / 1000), 'gps');
+        return;
+      }
+      setMarkers(ghostP, est / r.d);
+      var ahead = est - r.d * ghostP;
+      $('#status').textContent = nf(est, 1) + ' / ' + nf(r.d, r.d % 1 ? 1 : 0) + ' m · ' + (ahead >= 0 ? nf(ahead, 1) + ' m d\'avance' : nf(-ahead, 1) + ' m de retard') + ' sur la cible' + (age > 2.5 ? ' · signal GPS faible, touche Arrivée si besoin' : '');
+    } else { setMarkers(ghostP, null); }
+    raf = requestAnimationFrame(loop);
+  }
+  function finish(time, via) {
+    if (phase !== 'running') return;
+    phase = 'done'; cancelAnimationFrame(raf); stopGps(); endBeep(); idlePill();
+    var r = R();
+    results[cur] = { time: time, target: r.t, dist: r.d, via: via };
+    setClock(time); setMarkers(1, showsRunner() ? 1 : null);
+    $('#status').textContent = via === 'gps' ? 'Distance atteinte (mesure GPS).' : 'Arrivée enregistrée.';
+    var j = judge(time, r.t), v = kmh(r.d, time), vt = kmh(r.d, r.t);
+    var vd = $('#verdict'); vd.hidden = false; vd.dataset.kind = j.kind;
+    $('#vEyebrow').textContent = 'Série ' + (cur + 1) + ' sur ' + S.reps.length + ' · ' + nf(r.d, r.d % 1 ? 1 : 0) + ' m';
+    $('#vWord').textContent = WORD[j.kind];
+    $('#vTime').textContent = fmtT(time) + ' s';
+    var chip = $('#vDelta'); chip.dataset.kind = j.kind; chip.textContent = sgn(j.delta) + ' s vs ' + fmtT(r.t) + ' s';
+    $('#vNote').textContent = j.kind === 'slow'
+      ? 'Il te manque ' + nf(j.delta) + ' s. Vise ' + nf(vt, 1) + ' km/h de moyenne, tu as fait ' + nf(v, 1) + ' km/h.'
+      : j.kind === 'fast'
+        ? 'Tu as ' + nf(-j.delta) + ' s d\'avance sur la cible. Relâche un peu : ' + nf(v, 1) + ' km/h au lieu de ' + nf(vt, 1) + ' km/h.'
+        : 'Dans la marge de ' + nf(S.tol, S.tol % 1 ? 1 : 0) + ' % autour de la cible. ' + nf(v, 1) + ' km/h de moyenne.';
+    startRest();
+    updateAll();
+    setTimeout(function () { say(nf(time) + ' secondes. ' + SPOKEN[j.kind]); }, 1000);
+  }
+  function startRest() {
+    clearInterval(restT);
+    var box = $('#rest');
+    if (S.rest <= 0 || cur >= S.reps.length - 1) { box.hidden = true; return; }
+    box.hidden = false; $('#restLbl').textContent = 'Récupération';
+    var end = performance.now() + S.rest * 1000;
+    function upd() {
+      var left = (end - performance.now()) / 1000;
+      if (left <= 0) {
+        clearInterval(restT); $('#restClock').textContent = '0:00'; $('#restLbl').textContent = 'Récup terminée';
+        tone(660, 0.15, 0.5, 'sine'); tone(660, 0.15, 0.5, 'sine', 0.25); return;
+      }
+      $('#restClock').textContent = fmtM(left);
+    }
+    upd(); restT = setInterval(upd, 250);
+  }
+  function nextRep() {
+    clearInterval(restT);
+    if (cur < S.reps.length - 1) {
+      cur++; phase = 'idle'; $('#verdict').hidden = true; resetClock(); updateAll();
+      $('#status').textContent = 'Place-toi derrière la ligne, puis touche Départ.';
+    } else summary();
+  }
+  function summary() {
+    phase = 'finished'; unwake();
+    var done = results.filter(Boolean), n = done.length;
+    var deltas = done.map(function (r) { return r.time - r.target; });
+    var avg = n ? deltas.reduce(function (a, b) { return a + b; }, 0) / n : 0;
+    var inTol = done.filter(function (r) { return judge(r.time, r.target).kind === 'keep'; }).length;
+    var best = n ? Math.min.apply(null, done.map(function (r) { return r.time; })) : 0;
+    var vd = $('#verdict'); vd.hidden = false;
+    var kind = Math.abs(avg) / (done[0] ? done[0].target : 1) * 100 <= S.tol ? 'keep' : (avg > 0 ? 'slow' : 'fast');
+    vd.dataset.kind = kind;
+    $('#vEyebrow').textContent = 'Bilan de la séance';
+    $('#vWord').textContent = n + ' série' + (n > 1 ? 's' : '');
+    $('#vTime').textContent = 'Meilleur ' + fmtT(best) + ' s';
+    var chip = $('#vDelta'); chip.dataset.kind = kind; chip.textContent = 'Écart moyen ' + sgn(avg) + ' s';
+    $('#vNote').textContent = inTol + ' série' + (inTol > 1 ? 's' : '') + ' dans la marge de la cible sur ' + n + '.';
+    $('#rest').hidden = true;
+    $('#status').textContent = 'Bonne séance.';
+    updateAll();
+  }
+  function fullReset() {
+    clearTimeout(cdT); clearInterval(restT); cancelAnimationFrame(raf); stopGps(); unwake();
+    results = []; cur = 0; phase = 'idle';
+    $('#verdict').hidden = true; idlePill(); resetClock();
+    $('#status').textContent = 'Place-toi derrière la ligne, puis touche Départ.';
+    renderPlan();
+  }
+
+  /* Commandes */
+  $('#main').addEventListener('click', function () {
+    ensureAudio();
+    if (phase === 'idle') startCountdown();
+    else if (phase === 'countdown') cancelCountdown();
+    else if (phase === 'running') finish((performance.now() - t0) / 1000, 'manual');
+    else if (phase === 'done') nextRep();
+    else if (phase === 'finished') fullReset();
+  });
+  $('#reset').addEventListener('click', fullReset);
+  $('#add').addEventListener('click', function () {
+    var last = S.reps[S.reps.length - 1] || { d: 60, t: 8.5 };
+    S.reps.push({ d: last.d, t: last.t }); save(); renderPlan();
+  });
+  $('#gen').addEventListener('click', function () {
+    var n = Math.round(num($('#gReps').value)), d = num($('#gDist').value), t = num($('#gTime').value);
+    if (!(n >= 1 && n <= 40 && d > 0 && t > 0)) { $('#status').textContent = 'Séance non créée : vérifie le nombre de séries, la distance et le temps cible.'; return; }
+    S.reps = []; for (var i = 0; i < n; i++) S.reps.push({ d: d, t: t });
+    save(); fullReset();
+  });
+
+  function modeHint() {
+    $('#modeHint').textContent = S.mode === 'gps'
+      ? 'Le GPS mesure ta vitesse (effet Doppler) et en déduit la distance, puis déclenche le bip d\'arrivée tout seul. Garde le téléphone dehors, ciel dégagé. Le GPS ne fonctionne que si la page est ouverte depuis ton propre hébergement en https, pas depuis la page Claude. Sinon l\'appli passe en manuel au bout de 6 s.'
+      : 'Tu touches Arrivée toi-même (ou un partenaire le fait) au passage de la ligne. Le chrono et les conseils fonctionnent pareil.';
+  }
+  document.querySelectorAll('input[name="mode"]').forEach(function (el) {
+    el.checked = el.value === S.mode;
+    el.addEventListener('change', function () {
+      S.mode = el.value; save(); modeHint(); idlePill(); gps.err = false; updateAll();
+      if (phase === 'idle') resetClock();
+    });
+  });
+  var bindNum = function (id, key, min, max, int) {
+    var el = $('#' + id); el.value = String(S[key]).replace('.', ',');
+    el.addEventListener('change', function () {
+      var v = num(el.value);
+      if (isFinite(v) && v >= min && v <= max) { S[key] = int ? Math.round(v) : v; save(); }
+      el.value = String(S[key]).replace('.', ',');
+    });
+  };
+  bindNum('sCd', 'countdown', 0, 15, true);
+  bindNum('sRest', 'rest', 0, 900, true);
+  bindNum('sTol', 'tol', 0, 20, false);
+  $('#sVoice').checked = !!S.voice;
+  $('#sVoice').addEventListener('change', function (e) { S.voice = e.target.checked; save(); });
+  document.addEventListener('visibilitychange', function () { if (!document.hidden && (phase === 'countdown' || phase === 'running' || phase === 'done')) wake(); });
+
+  modeHint(); idlePill(); renderPlan(); resetClock();
+})();
+</script>
+
+</body></html>
