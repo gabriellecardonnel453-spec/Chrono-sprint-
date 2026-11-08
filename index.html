@@ -33,6 +33,7 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body {
   margin: 0;
   background: var(--bg);
@@ -375,6 +376,9 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
     nextDist=Math.max(pv.dist,nextDist);
     gps.dist=nextDist;gps.goodFixes++;
     gps.prev={lat:fix.lat,lon:fix.lon,t:fix.t,v:v,dist:nextDist,acc:fix.acc};
+    if(nextDist>=R().d && (gps.goodFixes<2 || fix.acc>15)){
+      gpsFail('Arrivée GPS incertaine');return;
+    }
     if(nextDist>=R().d&&gps.goodFixes>=2&&fix.acc<=15){
       var portion=Math.max(0,Math.min(1,(R().d-pv.dist)/Math.max(0.001,nextDist-pv.dist)));
       var crossing=pv.t+(fix.t-pv.t)*portion;
@@ -575,7 +579,7 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
     vd.dataset.kind = kind;
     $('#vEyebrow').textContent = 'Bilan de la séance';
     $('#vWord').textContent = n + ' série' + (n > 1 ? 's' : '');
-    $('#vTime').textContent = 'Meilleur ' + fmtT(best) + ' s';
+    $('#vTime').textContent = done.every(function(r){return r.dist===done[0].dist;}) ? 'Meilleur ' + fmtT(best) + ' s' : 'Distances variées';
     var chip = $('#vDelta'); chip.dataset.kind = kind; chip.textContent = 'Écart moyen ' + sgn(avg) + ' s';
     $('#vNote').textContent = inTol + ' série' + (inTol > 1 ? 's' : '') + ' dans la marge de la cible sur ' + n + '.';
     $('#rest').hidden = true;
