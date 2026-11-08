@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light}html,body{margin:0}</style></head><body>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#E8431A"><meta name="description" content="Chrono Sprint : mesure des sprints, séries et récupérations."><link rel="manifest" href="./manifest.webmanifest"><link rel="icon" href="./icon-512.png"><meta name="apple-mobile-web-app-capable" content="yes"><style>:root{color-scheme:light}html,body{margin:0}</style></head><body>
 <title>Chrono Sprint</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap">
@@ -695,6 +695,7 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
   document.addEventListener('visibilitychange', function () { if (!document.hidden && (phase === 'countdown' || phase === 'running' || phase === 'done')) wake(); });
 
   modeHint(); idlePill(); renderPlan(); resetClock(); renderHistory();
+  if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(function(){});
 })();
 </script>
 
