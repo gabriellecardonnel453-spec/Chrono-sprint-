@@ -294,68 +294,92 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
   function wake() { try { if (navigator.wakeLock && !wl) navigator.wakeLock.request('screen').then(function (l) { wl = l; l.addEventListener('release', function () { wl = null; }); }, function () {}); } catch (e) {} }
   function unwake() { try { if (wl) wl.release(); } catch (e) {} wl = null; }
 
-  /* GPS */
-  var gps = { id: null, last: null, prev: null, dist: 0, err: false };
-  function setPill(state, text) { $('#gps').dataset.state = state; $('#gpsText').textContent = text; }
-  function idlePill() { setPill('off', S.mode === 'gps' ? 'GPS prêt' : 'Mode manuel'); }
-  function hav(a, b) {
-    var R0 = 6371000, r = Math.PI / 180, dLa = (b.lat - a.lat) * r, dLo = (b.lon - a.lon) * r;
-    var x = Math.sin(dLa / 2) * Math.sin(dLa / 2) + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLo / 2) * Math.sin(dLo / 2);
-    return 2 * R0 * Math.asin(Math.sqrt(x));
+  /* GPS : l'arrivée n'est validée que par un nouveau relevé fiable.
+     Une position et sa précision ne garantissent jamais une mesure métrique parfaite. */
+  var gps = {id:null,last:null,prev:null,startPos:null,dist:0,est:0,err:false,
+    auto:false,goodFixes:0,timer:null};
+  function setPill(state,label){$('#gps').dataset.state=state;$('#gpsText').textContent=label;}
+  function idlePill(){setPill('off',S.mode==='gps'?'GPS à préparer':'Mode manuel');}
+  function hav(a,b){
+    var rad=Math.PI/180,dLa=(b.lat-a.lat)*rad,dLo=(b.lon-a.lon)*rad;
+    var x=Math.sin(dLa/2)**2+Math.cos(a.lat*rad)*Math.cos(b.lat*rad)*Math.sin(dLo/2)**2;
+    return 12742000*Math.asin(Math.min(1,Math.sqrt(x)));
   }
-  function startGps() {
-    gps.err = false; gps.last = null; gps.prev = null; gps.dist = 0;
-    if (!('geolocation' in navigator)) { gpsFail('GPS indisponible'); return; }
-    setPill('wait', 'GPS : recherche');
+  function fixTime(p){
+    var now=performance.now(),age=Date.now()-p.timestamp;
+    return isFinite(age)&&age>=-500&&age<4000 ? now-age : NaN;
+  }
+  function gpsReady(f){
+    return !!(f&&f.acc<=15&&performance.now()-f.t<2200&&(f.v!==null||f.acc<=6));
+  }
+  function startGps(){
+    if(S.mode!=='gps'||gps.id!==null)return;
+    gps.err=false;gps.last=null;gps.prev=null;gps.dist=0;gps.auto=false;gps.goodFixes=0;
+    if(!navigator.geolocation||!window.isSecureContext){gpsFail('GPS indisponible');return;}
+    setPill('wait','Recherche GPS');
+    $('#gpsQuality').textContent='Acquisition GPS en cours…';
     clearTimeout(gps.timer);
-    gps.timer = setTimeout(function () { if (!gps.last) gpsFail('GPS bloqué ici'); }, 6000);
-    try { gps.id = navigator.geolocation.watchPosition(onPos, onGpsErr, { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }); }
-    catch (e) { gpsFail('GPS indisponible'); }
+    gps.timer=setTimeout(function(){if(!gps.last)gpsFail('GPS introuvable');},12000);
+    try{
+      gps.id=navigator.geolocation.watchPosition(onPos,onGpsErr,
+        {enableHighAccuracy:true,maximumAge:0,timeout:12000});
+    }catch(e){gpsFail('GPS indisponible');}
   }
-  function stopGps() { clearTimeout(gps.timer); if (gps.id != null) { try { navigator.geolocation.clearWatch(gps.id); } catch (e) {} gps.id = null; } }
-  function onGpsErr(e) { gpsFail(e && e.code === 1 ? 'GPS refusé' : 'GPS indisponible'); }
-  function gpsFail(msg) {
-    gps.err = true; stopGps(); setPill('bad', msg);
-    if (phase === 'countdown' || phase === 'running') $('#status').textContent = msg + '. Touche Arrivée quand tu passes la ligne.';
-    if (phase === 'running') $('#runner').hidden = true;
+  function stopGps(){
+    clearTimeout(gps.timer);
+    if(gps.id!==null){try{navigator.geolocation.clearWatch(gps.id);}catch(e){}gps.id=null;}
   }
-  /* Heure du relevé GPS, ramenée à l'horloge du chrono */
-  function fixTime(p) { var t = performance.now(), d = p.timestamp - Date.now(); return (isFinite(d) && Math.abs(d) < 3000) ? t + d : t; }
-  /* Distance parcourue après tau secondes, à vitesse v et accélération a */
-  function distAt(v, a, tau) { return v * tau + a * tau * tau / 2; }
-  /* Temps nécessaire pour parcourir rem mètres */
-  function solveTau(v, a, rem) {
-    if (Math.abs(a) < 1e-3) return v > 0 ? rem / v : Infinity;
-    var disc = v * v + 2 * a * rem;
-    if (disc < 0) return Infinity;
-    var tau = (-v + Math.sqrt(disc)) / a;
-    return tau >= 0 ? tau : Infinity;
+  function onGpsErr(e){gpsFail(e&&e.code===1?'GPS refusé':'Signal GPS perdu');}
+  function gpsFail(msg){
+    gps.err=true;gps.auto=false;stopGps();setPill('bad',msg);
+    $('#gpsQuality').textContent=msg+' · chronométrage manuel disponible';
+    if(phase==='running'||phase==='countdown')
+      $('#status').textContent=msg+'. Touche Arrivée au passage de la ligne.';
+    $('#runner').hidden=true;
   }
-  /* La distance vient de la vitesse mesurée (Doppler), bien plus stable que la différence de positions.
-     Sans vitesse fournie par le téléphone, on se rabat sur les positions. */
-  function onPos(p) {
-    var c = p.coords;
-    var fix = { lat: c.latitude, lon: c.longitude, acc: c.accuracy, t: fixTime(p), v: (c.speed != null && isFinite(c.speed) && c.speed >= 0) ? c.speed : null };
-    gps.last = fix;
-    setPill(fix.acc <= 25 ? 'ok' : 'wait', 'GPS ±' + Math.round(fix.acc) + ' m' + (fix.v != null ? ' · vitesse' : ''));
-    if (phase !== 'running' || fix.acc > 60) return;
-    var pv = gps.prev;
-    if (!pv) { gps.prev = { lat: fix.lat, lon: fix.lon, t: fix.t, v: fix.v || 0, dist: 0, a: 0 }; return; }
-    if (fix.t <= pv.t + 20) return;
-    var dt = (fix.t - pv.t) / 1000, v1 = fix.v, step;
-    if (v1 != null) { step = (pv.v + v1) / 2 * dt; }
-    else {
-      var posStep = pv.lat == null ? 0 : hav(pv, fix);
-      v1 = Math.min(posStep / dt, 14); step = posStep;
+  function onPos(p){
+    var c=p.coords,t=fixTime(p);
+    if(!isFinite(t)||!isFinite(c.latitude)||!isFinite(c.longitude)||!isFinite(c.accuracy))return;
+    var fix={lat:c.latitude,lon:c.longitude,acc:c.accuracy,t:t,
+      v:(c.speed!==null&&isFinite(c.speed)&&c.speed>=0)?c.speed:null};
+    gps.last=fix;
+    clearTimeout(gps.timer);
+    var ready=gpsReady(fix);
+    setPill(ready?'ok':'wait','GPS ±'+Math.round(fix.acc)+' m');
+    $('#gpsQuality').textContent=ready?'Signal prêt · distance estimée':
+      'Signal insuffisant · attends ou choisis Manuel';
+    if(phase!=='running'||!gps.auto)return;
+    var pv=gps.prev,dt=(fix.t-pv.t)/1000;
+    if(dt<=0.12)return;
+    if(dt>3){gpsFail('GPS trop lent');return;}
+    if(fix.acc>20)return;
+    var displacement=hav(pv,fix),v=fix.v,step;
+    if(v!==null){
+      if(v>16||(pv.v>=2&&Math.abs(v-pv.v)/dt>12)){
+        gpsFail('Vitesse GPS incohérente');return;
+      }
+      step=(pv.v+v)*0.5*dt;
+      if(pv.acc<=8&&fix.acc<=8&&displacement>step+12){
+        gpsFail('Positions GPS incohérentes');return;
+      }
+    }else if(fix.acc<=6&&pv.acc<=6&&displacement/dt<=16){
+      v=displacement/dt;step=displacement;
+    }else{gpsFail('GPS trop imprécis');return;}
+    var nextDist=pv.dist+Math.max(0,step);
+    // Correction légère et bornée par le déplacement direct lorsqu'il est cohérent.
+    if(gps.startPos&&fix.acc<=8&&gps.startPos.acc<=8&&nextDist>20){
+      var direct=hav(gps.startPos,fix);
+      if(Math.abs(direct-nextDist)<=10)
+        nextDist+=Math.max(-0.8,Math.min(0.8,(direct-nextDist)*0.12));
     }
-    var a = (v1 - pv.v) / dt, target = R().d;
-    if (pv.dist + step >= target) {
-      var tau = solveTau(pv.v, a, target - pv.dist);
-      finish(Math.max(0.01, (pv.t + (isFinite(tau) ? tau * 1000 : dt * 1000) - t0) / 1000), 'gps');
-      return;
+    nextDist=Math.max(pv.dist,nextDist);
+    gps.dist=nextDist;gps.goodFixes++;
+    gps.prev={lat:fix.lat,lon:fix.lon,t:fix.t,v:v,dist:nextDist,acc:fix.acc};
+    if(nextDist>=R().d&&gps.goodFixes>=2&&fix.acc<=15){
+      var portion=Math.max(0,Math.min(1,(R().d-pv.dist)/Math.max(0.001,nextDist-pv.dist)));
+      var crossing=pv.t+(fix.t-pv.t)*portion;
+      finish(Math.max(0.01,(crossing-t0)/1000),'gps');
     }
-    gps.prev = { lat: fix.lat, lon: fix.lon, t: fix.t, v: v1, dist: pv.dist + step, a: Math.max(-4, Math.min(6, a)) * 0.5 };
-    gps.dist = gps.prev.dist;
   }
 
   /* Verdict */
