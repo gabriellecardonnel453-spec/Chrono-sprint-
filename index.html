@@ -620,15 +620,22 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
     save(); fullReset();
   });
 
-  function modeHint() {
-    $('#modeHint').textContent = S.mode === 'gps'
-      ? 'Le GPS mesure ta vitesse (effet Doppler) et en déduit la distance, puis déclenche le bip d\'arrivée tout seul. Garde le téléphone dehors, ciel dégagé. Le GPS ne fonctionne que si la page est ouverte depuis ton propre hébergement en https, pas depuis la page Claude. Sinon l\'appli passe en manuel au bout de 6 s.'
-      : 'Tu touches Arrivée toi-même (ou un partenaire le fait) au passage de la ligne. Le chrono et les conseils fonctionnent pareil.';
+  function modeHint(){
+    $('#gpsPrep').hidden=S.mode!=='gps';
+    $('#modeHint').textContent=S.mode==='gps'
+      ? 'Prépare le GPS avant de partir, téléphone sous ciel dégagé. L’arrivée automatique exige des relevés cohérents ; sinon touche Arrivée. Sur de courtes distances, le GPS du téléphone reste approximatif.'
+      : 'Tu touches Arrivée toi-même (ou un partenaire) au passage de la ligne. Mesure et marque la distance sur la piste.';
   }
+  $('#prepGps').addEventListener('click',function(){
+    if(gps.id!==null){
+      stopGps();gps.auto=false;idlePill();$('#gpsQuality').textContent='GPS arrêté';
+    }else startGps();
+  });
   document.querySelectorAll('input[name="mode"]').forEach(function (el) {
     el.checked = el.value === S.mode;
     el.addEventListener('change', function () {
-      S.mode = el.value; save(); modeHint(); idlePill(); gps.err = false; updateAll();
+      if(gps.id!==null) stopGps();
+      S.mode=el.value;save();modeHint();idlePill();gps.err=false;gps.auto=false;gps.last=null;updateAll();
       if (phase === 'idle') resetClock();
     });
   });
@@ -645,9 +652,45 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
   bindNum('sTol', 'tol', 0, 20, false);
   $('#sVoice').checked = !!S.voice;
   $('#sVoice').addEventListener('change', function (e) { S.voice = e.target.checked; save(); });
+  $('#sAuto').checked=!!S.autoNext;
+  $('#sAuto').addEventListener('change',function(e){S.autoNext=e.target.checked;save();});
+  $('#sVibrate').checked=!!S.vibrate;
+  $('#sVibrate').addEventListener('change',function(e){S.vibrate=e.target.checked;save();});
+  function renderHistory(){
+    var box=$('#historyList');box.innerHTML='';
+    if(!history.length){box.textContent='Aucune séance terminée pour le moment.';return;}
+    history.slice(0,20).forEach(function(s){
+      var rs=Array.isArray(s.reps)?s.reps.filter(function(r){return r&&r.time>0;}):[];
+      if(!rs.length)return;
+      var best=Math.min.apply(null,rs.map(function(r){return r.time;}));
+      var avg=rs.reduce(function(acc,r){return acc+r.time;},0)/rs.length;
+      var div=document.createElement('div');div.className='history-entry';
+      var strong=document.createElement('strong'),txt=document.createElement('span');
+      strong.textContent=new Date(s.at).toLocaleDateString('fr-FR',
+        {day:'2-digit',month:'short',year:'numeric'})+' · '+rs.length+' séries';
+      txt.textContent='Meilleur '+fmtT(best)+' s · moyenne '+fmtT(avg)+
+        ' s · '+nf(rs[0].d,0)+' m (première série)';
+      div.append(strong,txt);box.appendChild(div);
+    });
+  }
+  $('#clearHistory').addEventListener('click',function(){
+    if(!confirm('Effacer les séances enregistrées sur cet appareil ?'))return;
+    history=[];saveHistory();renderHistory();
+  });
+  $('#exportHistory').addEventListener('click',function(){
+    if(!history.length)return;
+    var lines=['Date;Série;Distance (m);Cible (s);Temps (s);Mode'];
+    history.forEach(function(s){(s.reps||[]).forEach(function(r,i){
+      lines.push([s.at,i+1,r.d,r.t,r.time,r.via].join(';'));
+    });});
+    var url=URL.createObjectURL(new Blob(['\uFEFF'+lines.join('\r\n')],
+      {type:'text/csv;charset=utf-8'}));
+    var a=document.createElement('a');a.href=url;a.download='chrono-sprint-historique.csv';a.click();
+    setTimeout(function(){URL.revokeObjectURL(url);},1000);
+  });
   document.addEventListener('visibilitychange', function () { if (!document.hidden && (phase === 'countdown' || phase === 'running' || phase === 'done')) wake(); });
 
-  modeHint(); idlePill(); renderPlan(); resetClock();
+  modeHint(); idlePill(); renderPlan(); resetClock(); renderHistory();
 })();
 </script>
 
