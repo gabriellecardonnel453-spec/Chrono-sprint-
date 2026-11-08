@@ -316,6 +316,7 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
   function startGps(){
     if(S.mode!=='gps'||gps.id!==null)return;
     gps.err=false;gps.last=null;gps.prev=null;gps.dist=0;gps.auto=false;gps.goodFixes=0;
+    $('#prepGps').textContent='Arrêter le GPS';
     if(!navigator.geolocation||!window.isSecureContext){gpsFail('GPS indisponible');return;}
     setPill('wait','Recherche GPS');
     $('#gpsQuality').textContent='Acquisition GPS en cours…';
@@ -329,6 +330,7 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
   function stopGps(){
     clearTimeout(gps.timer);
     if(gps.id!==null){try{navigator.geolocation.clearWatch(gps.id);}catch(e){}gps.id=null;}
+    $('#prepGps').textContent='Préparer le GPS';
   }
   function onGpsErr(e){gpsFail(e&&e.code===1?'GPS refusé':'Signal GPS perdu');}
   function gpsFail(msg){
@@ -632,7 +634,7 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
   }
   $('#prepGps').addEventListener('click',function(){
     if(gps.id!==null){
-      stopGps();gps.auto=false;idlePill();$('#gpsQuality').textContent='GPS arrêté';
+      stopGps();gps.auto=false;gps.err=true;gps.last=null;idlePill();$('#gpsQuality').textContent='GPS arrêté';
     }else startGps();
   });
   document.querySelectorAll('input[name="mode"]').forEach(function (el) {
@@ -662,6 +664,8 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
   $('#sVibrate').addEventListener('change',function(e){S.vibrate=e.target.checked;save();});
   function renderHistory(){
     var box=$('#historyList');box.innerHTML='';
+    $('#exportHistory').disabled=history.length===0;
+    $('#clearHistory').disabled=history.length===0;
     if(!history.length){box.textContent='Aucune séance terminée pour le moment.';return;}
     history.slice(0,20).forEach(function(s){
       var rs=Array.isArray(s.reps)?s.reps.filter(function(r){return r&&r.time>0;}):[];
