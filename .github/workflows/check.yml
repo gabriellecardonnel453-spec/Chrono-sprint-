@@ -1,0 +1,33 @@
+name: Vérification Chrono Sprint
+on:
+  push:
+    branches: [main, ameliorations-gps-precision-2026]
+  pull_request:
+
+jobs:
+  verification:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Vérifier la syntaxe et les éléments essentiels
+        run: |
+          node --check sw.js
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const vm = require('node:vm');
+          const assert = require('node:assert/strict');
+          const html = fs.readFileSync('index.html', 'utf8');
+          const script = html.match(/<script>([\s\S]*?)<\/script>/);
+          assert.ok(script, 'Script manquant');
+          new vm.Script(script[1], {filename:'index-inline.js'});
+          const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]);
+          assert.equal(new Set(ids).size, ids.length, 'IDs HTML dupliqués');
+          for (const id of ['main','clock','rows','gpsPrep','prepGps','gpsQuality','sAuto','sVibrate','historyList']) {
+            assert.ok(ids.includes(id), 'Element manquant: '+id);
+          }
+          const manifest = JSON.parse(fs.readFileSync('manifest.webmanifest','utf8'));
+          assert.equal(manifest.display, 'standalone');
+          assert.ok(script[1].includes('GPS trop imprécis'));
+          assert.ok(script[1].includes('renderHistory'));
+          console.log('Tests statiques OK');
+          NODE

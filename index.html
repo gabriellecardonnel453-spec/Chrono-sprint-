@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light}html,body{margin:0}</style></head><body>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#E8431A"><meta name="description" content="Chrono Sprint : mesure des sprints, séries et récupérations."><link rel="manifest" href="./manifest.webmanifest"><link rel="icon" href="./icon-512.png"><meta name="apple-mobile-web-app-capable" content="yes"><style>:root{color-scheme:light}html,body{margin:0}</style></head><body>
 <title>Chrono Sprint</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap">
@@ -33,6 +33,7 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body {
   margin: 0;
   background: var(--bg);
@@ -132,6 +133,18 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
 .hint { margin: 0; font-size: 14px; color: var(--ink-2); max-width: 52ch; }
 .check { display: flex; align-items: center; gap: 10px; font-weight: 500; }
 .check input { width: 22px; height: 22px; accent-color: var(--accent); }
+.presets{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}
+.presets .btn{flex:1 1 65px;min-width:55px;height:38px;border-color:var(--line)}
+.gpsprep{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.gpsprep small{color:var(--ink-2)}
+.history summary{cursor:pointer;font:700 20px/1.3 var(--f-display);text-transform:uppercase;letter-spacing:.07em}
+.history-list{display:grid;gap:10px;margin-top:14px}
+.history-entry{border-top:1px solid var(--line);padding-top:10px;font-size:14px}
+.history-entry strong{display:block}
+.history-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.history-actions .btn{flex:1}
+@media(max-width:380px){.cols,.row{grid-template-columns:20px 60px 65px minmax(0,1fr) 30px;gap:5px}.card{padding:14px}.x{width:30px}.clock{font-size:clamp(76px,24vw,110px)}}
+
 </style>
 
 <main class="app">
@@ -172,6 +185,12 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
       <h2>Séance</h2>
       <button class="link" id="reset" type="button">Effacer les résultats</button>
     </div>
+    <div class="presets" role="group" aria-label="Distances rapides">
+      <button class="btn" type="button" data-distance="30">30 m</button>
+      <button class="btn" type="button" data-distance="60">60 m</button>
+      <button class="btn" type="button" data-distance="100">100 m</button>
+      <button class="btn" type="button" data-distance="200">200 m</button>
+    </div>
     <div class="gen">
       <div class="field"><label for="gReps">Séries</label><input class="in" id="gReps" inputmode="numeric" value="6"></div>
       <div class="field"><label for="gDist">Distance (m)</label><input class="in" id="gDist" inputmode="decimal" value="60"></div>
@@ -191,14 +210,28 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
       <label><input type="radio" name="mode" value="manual"><span>Manuel</span></label>
     </fieldset>
     <p class="hint" id="modeHint"></p>
+    <div class="gpsprep" id="gpsPrep" hidden>
+      <button class="btn" id="prepGps" type="button">Préparer le GPS</button>
+      <small id="gpsQuality" role="status">Attente du signal GPS</small>
+    </div>
     <div class="nums">
       <div class="field"><label for="sCd">Départ (s)</label><input class="in" id="sCd" inputmode="numeric"></div>
       <div class="field"><label for="sRest">Récup (s)</label><input class="in" id="sRest" inputmode="numeric"></div>
       <div class="field"><label for="sTol">Marge (%)</label><input class="in" id="sTol" inputmode="decimal"></div>
     </div>
     <label class="check" for="sVoice"><input type="checkbox" id="sVoice">Annoncer le temps et le conseil à voix haute</label>
-    <p class="hint">Le chrono démarre au gros bip. Si ton temps est dans la marge autour de la cible, l'appli dit de garder l'allure. Au-dessus, plus vite. En dessous, moins vite.</p>
+    <label class="check" for="sAuto"><input type="checkbox" id="sAuto">Enchaîner les séries après la récupération et le compte à rebours</label>
+    <label class="check" for="sVibrate"><input type="checkbox" id="sVibrate">Vibrations au départ et à l’arrivée (si compatibles)</label>
+    <p class="hint">Au-dessus de la cible : accélère. En dessous : ralentis. Le GPS reste une estimation. Pour un temps précis, utilise une distance balisée et l'arrivée manuelle ou des cellules photoélectriques.</p>
   </section>
+  <details class="card history" id="historyPanel">
+    <summary>Historique des séances</summary>
+    <div class="history-list" id="historyList"></div>
+    <div class="history-actions">
+      <button class="btn" id="exportHistory" type="button">Exporter CSV</button>
+      <button class="btn" id="clearHistory" type="button">Effacer l’historique</button>
+    </div>
+  </details>
 </main>
 
 <script>
@@ -216,16 +249,20 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
     get: function () { try { return JSON.parse(localStorage.getItem(KEY)); } catch (e) { return null; } },
     set: function (v) { try { localStorage.setItem(KEY, JSON.stringify(v)); } catch (e) {} }
   };
-  var S = { reps: [], rest: 120, countdown: 3, tol: 2, mode: 'manual', voice: true };
+  var S = { reps: [], rest: 120, countdown: 3, tol: 2, mode: 'manual', voice: true, autoNext: false, vibrate: true };
   for (var i = 0; i < 6; i++) S.reps.push({ d: 60, t: 8.5 });
   var saved = store.get();
   if (saved && typeof saved === 'object') {
-    ['rest', 'countdown', 'tol', 'mode', 'voice'].forEach(function (k) { if (saved[k] != null) S[k] = saved[k]; });
+    ['rest', 'countdown', 'tol', 'mode', 'voice', 'autoNext', 'vibrate'].forEach(function (k) { if (saved[k] != null) S[k] = saved[k]; });
     if (Array.isArray(saved.reps) && saved.reps.length && saved.reps.every(function (r) { return r && r.d > 0 && r.t > 0; })) S.reps = saved.reps;
   }
   var save = function () { store.set(S); };
 
-  var phase = 'idle', cur = 0, results = [], t0 = 0, raf = 0, cdT = 0, restT = 0;
+  var phase = 'idle', cur = 0, results = [], t0 = 0, raf = 0, cdT = 0, restT = 0, lastPaint = 0;
+  var HKEY = 'chrono-sprint.history.v1', history = [];
+  try { var hv = JSON.parse(localStorage.getItem(HKEY)); if (Array.isArray(hv)) history = hv.slice(0, 20); } catch (e) {}
+  function saveHistory() { try { localStorage.setItem(HKEY, JSON.stringify(history)); } catch (e) {} }
+  function buzz(pattern) { if (S.vibrate && navigator.vibrate) try { navigator.vibrate(pattern); } catch (e) {} }
   var R = function () { return S.reps[cur]; };
 
   /* Son */
@@ -258,68 +295,97 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
   function wake() { try { if (navigator.wakeLock && !wl) navigator.wakeLock.request('screen').then(function (l) { wl = l; l.addEventListener('release', function () { wl = null; }); }, function () {}); } catch (e) {} }
   function unwake() { try { if (wl) wl.release(); } catch (e) {} wl = null; }
 
-  /* GPS */
-  var gps = { id: null, last: null, prev: null, dist: 0, err: false };
-  function setPill(state, text) { $('#gps').dataset.state = state; $('#gpsText').textContent = text; }
-  function idlePill() { setPill('off', S.mode === 'gps' ? 'GPS prêt' : 'Mode manuel'); }
-  function hav(a, b) {
-    var R0 = 6371000, r = Math.PI / 180, dLa = (b.lat - a.lat) * r, dLo = (b.lon - a.lon) * r;
-    var x = Math.sin(dLa / 2) * Math.sin(dLa / 2) + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLo / 2) * Math.sin(dLo / 2);
-    return 2 * R0 * Math.asin(Math.sqrt(x));
+  /* GPS : l'arrivée n'est validée que par un nouveau relevé fiable.
+     Une position et sa précision ne garantissent jamais une mesure métrique parfaite. */
+  var gps = {id:null,last:null,prev:null,startPos:null,dist:0,est:0,err:false,
+    auto:false,goodFixes:0,timer:null};
+  function setPill(state,label){$('#gps').dataset.state=state;$('#gpsText').textContent=label;}
+  function idlePill(){setPill('off',S.mode==='gps'?'GPS à préparer':'Mode manuel');}
+  function hav(a,b){
+    var rad=Math.PI/180,dLa=(b.lat-a.lat)*rad,dLo=(b.lon-a.lon)*rad;
+    var x=Math.sin(dLa/2)**2+Math.cos(a.lat*rad)*Math.cos(b.lat*rad)*Math.sin(dLo/2)**2;
+    return 12742000*Math.asin(Math.min(1,Math.sqrt(x)));
   }
-  function startGps() {
-    gps.err = false; gps.last = null; gps.prev = null; gps.dist = 0;
-    if (!('geolocation' in navigator)) { gpsFail('GPS indisponible'); return; }
-    setPill('wait', 'GPS : recherche');
+  function fixTime(p){
+    var now=performance.now(),age=Date.now()-p.timestamp;
+    return isFinite(age)&&age>=-500&&age<4000 ? now-age : NaN;
+  }
+  function gpsReady(f){
+    return !!(f&&f.acc<=15&&performance.now()-f.t<2200&&(f.v!==null||f.acc<=6));
+  }
+  function startGps(){
+    if(S.mode!=='gps'||gps.id!==null)return;
+    gps.err=false;gps.last=null;gps.prev=null;gps.dist=0;gps.auto=false;gps.goodFixes=0;
+    $('#prepGps').textContent='Arrêter le GPS';
+    if(!navigator.geolocation||!window.isSecureContext){gpsFail('GPS indisponible');return;}
+    setPill('wait','Recherche GPS');
+    $('#gpsQuality').textContent='Acquisition GPS en cours…';
     clearTimeout(gps.timer);
-    gps.timer = setTimeout(function () { if (!gps.last) gpsFail('GPS bloqué ici'); }, 6000);
-    try { gps.id = navigator.geolocation.watchPosition(onPos, onGpsErr, { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }); }
-    catch (e) { gpsFail('GPS indisponible'); }
+    gps.timer=setTimeout(function(){if(!gps.last)gpsFail('GPS introuvable');},12000);
+    try{
+      gps.id=navigator.geolocation.watchPosition(onPos,onGpsErr,
+        {enableHighAccuracy:true,maximumAge:0,timeout:12000});
+    }catch(e){gpsFail('GPS indisponible');}
   }
-  function stopGps() { clearTimeout(gps.timer); if (gps.id != null) { try { navigator.geolocation.clearWatch(gps.id); } catch (e) {} gps.id = null; } }
-  function onGpsErr(e) { gpsFail(e && e.code === 1 ? 'GPS refusé' : 'GPS indisponible'); }
-  function gpsFail(msg) {
-    gps.err = true; stopGps(); setPill('bad', msg);
-    if (phase === 'countdown' || phase === 'running') $('#status').textContent = msg + '. Touche Arrivée quand tu passes la ligne.';
-    if (phase === 'running') $('#runner').hidden = true;
+  function stopGps(){
+    clearTimeout(gps.timer);
+    if(gps.id!==null){try{navigator.geolocation.clearWatch(gps.id);}catch(e){}gps.id=null;}
+    $('#prepGps').textContent='Préparer le GPS';
   }
-  /* Heure du relevé GPS, ramenée à l'horloge du chrono */
-  function fixTime(p) { var t = performance.now(), d = p.timestamp - Date.now(); return (isFinite(d) && Math.abs(d) < 3000) ? t + d : t; }
-  /* Distance parcourue après tau secondes, à vitesse v et accélération a */
-  function distAt(v, a, tau) { return v * tau + a * tau * tau / 2; }
-  /* Temps nécessaire pour parcourir rem mètres */
-  function solveTau(v, a, rem) {
-    if (Math.abs(a) < 1e-3) return v > 0 ? rem / v : Infinity;
-    var disc = v * v + 2 * a * rem;
-    if (disc < 0) return Infinity;
-    var tau = (-v + Math.sqrt(disc)) / a;
-    return tau >= 0 ? tau : Infinity;
+  function onGpsErr(e){gpsFail(e&&e.code===1?'GPS refusé':'Signal GPS perdu');}
+  function gpsFail(msg){
+    gps.err=true;gps.auto=false;stopGps();setPill('bad',msg);
+    $('#gpsQuality').textContent=msg+' · chronométrage manuel disponible';
+    if(phase==='running'||phase==='countdown')
+      $('#status').textContent=msg+'. Touche Arrivée au passage de la ligne.';
+    $('#runner').hidden=true;
   }
-  /* La distance vient de la vitesse mesurée (Doppler), bien plus stable que la différence de positions.
-     Sans vitesse fournie par le téléphone, on se rabat sur les positions. */
-  function onPos(p) {
-    var c = p.coords;
-    var fix = { lat: c.latitude, lon: c.longitude, acc: c.accuracy, t: fixTime(p), v: (c.speed != null && isFinite(c.speed) && c.speed >= 0) ? c.speed : null };
-    gps.last = fix;
-    setPill(fix.acc <= 25 ? 'ok' : 'wait', 'GPS ±' + Math.round(fix.acc) + ' m' + (fix.v != null ? ' · vitesse' : ''));
-    if (phase !== 'running' || fix.acc > 60) return;
-    var pv = gps.prev;
-    if (!pv) { gps.prev = { lat: fix.lat, lon: fix.lon, t: fix.t, v: fix.v || 0, dist: 0, a: 0 }; return; }
-    if (fix.t <= pv.t + 20) return;
-    var dt = (fix.t - pv.t) / 1000, v1 = fix.v, step;
-    if (v1 != null) { step = (pv.v + v1) / 2 * dt; }
-    else {
-      var posStep = pv.lat == null ? 0 : hav(pv, fix);
-      v1 = Math.min(posStep / dt, 14); step = posStep;
+  function onPos(p){
+    var c=p.coords,t=fixTime(p);
+    if(!isFinite(t)||!isFinite(c.latitude)||!isFinite(c.longitude)||!isFinite(c.accuracy))return;
+    var fix={lat:c.latitude,lon:c.longitude,acc:c.accuracy,t:t,
+      v:(c.speed!==null&&isFinite(c.speed)&&c.speed>=0)?c.speed:null};
+    gps.last=fix;
+    clearTimeout(gps.timer);
+    var ready=gpsReady(fix);
+    setPill(ready?'ok':'wait','GPS ±'+Math.round(fix.acc)+' m');
+    $('#gpsQuality').textContent=ready?'Signal prêt · distance estimée':
+      'Signal insuffisant · attends ou choisis Manuel';
+    if(phase!=='running'||!gps.auto)return;
+    var pv=gps.prev,dt=(fix.t-pv.t)/1000;
+    if(dt<=0.12)return;
+    if(dt>3){gpsFail('GPS trop lent');return;}
+    if(fix.acc>20)return;
+    var displacement=hav(pv,fix),v=fix.v,step;
+    if(v!==null){
+      if(v>16||(pv.v>=2&&Math.abs(v-pv.v)/dt>12)){
+        gpsFail('Vitesse GPS incohérente');return;
+      }
+      step=(pv.v+v)*0.5*dt;
+      if(pv.acc<=8&&fix.acc<=8&&displacement>step+12){
+        gpsFail('Positions GPS incohérentes');return;
+      }
+    }else if(fix.acc<=6&&pv.acc<=6&&displacement/dt<=16){
+      v=displacement/dt;step=displacement;
+    }else{gpsFail('GPS trop imprécis');return;}
+    var nextDist=pv.dist+Math.max(0,step);
+    // Correction légère et bornée par le déplacement direct lorsqu'il est cohérent.
+    if(gps.startPos&&fix.acc<=8&&gps.startPos.acc<=8&&nextDist>20){
+      var direct=hav(gps.startPos,fix);
+      if(Math.abs(direct-nextDist)<=10)
+        nextDist+=Math.max(-0.8,Math.min(0.8,(direct-nextDist)*0.12));
     }
-    var a = (v1 - pv.v) / dt, target = R().d;
-    if (pv.dist + step >= target) {
-      var tau = solveTau(pv.v, a, target - pv.dist);
-      finish(Math.max(0.01, (pv.t + (isFinite(tau) ? tau * 1000 : dt * 1000) - t0) / 1000), 'gps');
-      return;
+    nextDist=Math.max(pv.dist,nextDist);
+    gps.dist=nextDist;gps.goodFixes++;
+    gps.prev={lat:fix.lat,lon:fix.lon,t:fix.t,v:v,dist:nextDist,acc:fix.acc};
+    if(nextDist>=R().d && (gps.goodFixes<2 || fix.acc>15)){
+      gpsFail('Arrivée GPS incertaine');return;
     }
-    gps.prev = { lat: fix.lat, lon: fix.lon, t: fix.t, v: v1, dist: pv.dist + step, a: Math.max(-4, Math.min(6, a)) * 0.5 };
-    gps.dist = gps.prev.dist;
+    if(nextDist>=R().d&&gps.goodFixes>=2&&fix.acc<=15){
+      var portion=Math.max(0,Math.min(1,(R().d-pv.dist)/Math.max(0.001,nextDist-pv.dist)));
+      var crossing=pv.t+(fix.t-pv.t)*portion;
+      finish(Math.max(0.01,(crossing-t0)/1000),'gps');
+    }
   }
 
   /* Verdict */
@@ -394,6 +460,7 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
   /* Déroulé d'une série */
   function startCountdown() {
     ensureAudio(); wake();
+    try { if(window.speechSynthesis) speechSynthesis.cancel(); } catch(e) {}
     phase = 'countdown';
     $('#verdict').hidden = true;
     if (S.mode === 'gps') startGps(); else setPill('off', 'Mode manuel');
@@ -407,50 +474,54 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
     })();
   }
   function cancelCountdown() {
-    clearTimeout(cdT); stopGps(); phase = 'idle'; idlePill(); resetClock(); updateAll();
+    clearTimeout(cdT); stopGps(); unwake(); phase = 'idle'; idlePill(); resetClock(); updateAll();
     $('#status').textContent = 'Départ annulé.';
   }
-  function go() {
-    phase = 'running';
-    startBeep();
-    t0 = performance.now();
-    gps.dist = 0; gps.est = 0; gps.prev = null;
-    if (S.mode === 'gps' && !gps.err) {
-      var gl = gps.last && performance.now() - gps.last.t < 4000 ? gps.last : null;
-      gps.prev = { lat: gl ? gl.lat : null, lon: gl ? gl.lon : null, t: t0, v: 0, dist: 0, a: 0 };
+  function go(){
+    phase='running';
+    t0=performance.now();lastPaint=0;gps.dist=0;gps.est=0;gps.goodFixes=0;
+    gps.auto=false;
+    if(S.mode==='gps'&&!gps.err){
+      var gl=gps.last;
+      if(gpsReady(gl)){
+        gps.auto=true;gps.startPos=gl;
+        gps.prev={lat:gl.lat,lon:gl.lon,t:t0,v:gl.v===null?0:Math.min(gl.v,16),
+          dist:0,acc:gl.acc};
+      }else gpsFail('GPS non prêt au départ');
     }
-    updateAll();
-    $('#status').textContent = S.mode === 'gps' && !gps.err ? 'Cours !' : 'Cours ! Touche Arrivée à la ligne.';
+    startBeep();buzz([170,65,170]);updateAll();
+    $('#status').textContent=gps.auto?'Cours ! Distance GPS estimée.':
+      'Cours ! Touche Arrivée à la ligne.';
     loop();
   }
-  function loop() {
-    if (phase !== 'running') return;
-    var el = (performance.now() - t0) / 1000, r = R();
+  function loop(){
+    if(phase!=='running')return;
+    raf=requestAnimationFrame(loop);
+    var now=performance.now();
+    if(now-lastPaint<75)return;
+    lastPaint=now;
+    var el=(now-t0)/1000,r=R();
     setClock(el);
-    var ghostP = el / r.t;
-    if (showsRunner() && gps.prev) {
-      /* Entre deux relevés GPS (environ 1 par seconde), la position est estimée à partir de la dernière vitesse. */
-      var pv = gps.prev, age = (performance.now() - pv.t) / 1000;
-      var est = pv.dist + distAt(pv.v, pv.a, Math.max(0, Math.min(age, 2.5)));
-      gps.est = est;
-      if (est >= r.d) {
-        var tc = pv.t + solveTau(pv.v, pv.a, r.d - pv.dist) * 1000;
-        finish(Math.max(0.01, ((isFinite(tc) ? tc : performance.now()) - t0) / 1000), 'gps');
-        return;
-      }
-      setMarkers(ghostP, est / r.d);
-      var ahead = est - r.d * ghostP;
-      $('#status').textContent = nf(est, 1) + ' / ' + nf(r.d, r.d % 1 ? 1 : 0) + ' m · ' + (ahead >= 0 ? nf(ahead, 1) + ' m d\'avance' : nf(-ahead, 1) + ' m de retard') + ' sur la cible' + (age > 2.5 ? ' · signal GPS faible, touche Arrivée si besoin' : '');
-    } else { setMarkers(ghostP, null); }
-    raf = requestAnimationFrame(loop);
+    var ghostP=el/r.t;
+    if(S.mode==='gps'&&gps.auto&&gps.prev){
+      var pv=gps.prev,age=(now-pv.t)/1000;
+      if(age>3){gpsFail('GPS interrompu');setMarkers(ghostP,null);return;}
+      // L'animation estime 350 ms d'avance maximum ; elle ne termine jamais un sprint.
+      gps.est=pv.dist+pv.v*Math.max(0,Math.min(age,0.35));
+      setMarkers(ghostP,gps.est/r.d);
+      $('#status').textContent=nf(Math.min(gps.est,r.d),1)+' / '+
+        nf(r.d,r.d%1?1:0)+' m estimés · '+
+        (age>1.8?'signal lent, arrivée manuelle possible':
+        'touche Arrivée si tu passes la ligne');
+    }else setMarkers(ghostP,null);
   }
   function finish(time, via) {
     if (phase !== 'running') return;
-    phase = 'done'; cancelAnimationFrame(raf); stopGps(); endBeep(); idlePill();
+    phase = 'done'; cancelAnimationFrame(raf); stopGps(); gps.auto=false; endBeep(); buzz([250,80,110]); idlePill();
     var r = R();
     results[cur] = { time: time, target: r.t, dist: r.d, via: via };
-    setClock(time); setMarkers(1, showsRunner() ? 1 : null);
-    $('#status').textContent = via === 'gps' ? 'Distance atteinte (mesure GPS).' : 'Arrivée enregistrée.';
+    setClock(time); setMarkers(1, via === 'gps' ? 1 : null);
+    $('#status').textContent = via === 'gps' ? 'Arrivée GPS estimée, non officielle.' : 'Arrivée enregistrée manuellement.';
     var j = judge(time, r.t), v = kmh(r.d, time), vt = kmh(r.d, r.t);
     var vd = $('#verdict'); vd.hidden = false; vd.dataset.kind = j.kind;
     $('#vEyebrow').textContent = 'Série ' + (cur + 1) + ' sur ' + S.reps.length + ' · ' + nf(r.d, r.d % 1 ? 1 : 0) + ' m';
@@ -476,8 +547,11 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
       var left = (end - performance.now()) / 1000;
       if (left <= 0) {
         clearInterval(restT); $('#restClock').textContent = '0:00'; $('#restLbl').textContent = 'Récup terminée';
-        tone(660, 0.15, 0.5, 'sine'); tone(660, 0.15, 0.5, 'sine', 0.25); return;
+        tone(660, 0.15, 0.5, 'sine'); tone(660, 0.15, 0.5, 'sine', 0.25);
+        if(S.autoNext && phase==='done' && cur<S.reps.length-1){nextRep();startCountdown();}
+        return;
       }
+      if(S.autoNext && S.mode==='gps' && left<9 && gps.id===null && phase==='done') startGps();
       $('#restClock').textContent = fmtM(left);
     }
     upd(); restT = setInterval(upd, 250);
@@ -496,12 +570,18 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
     var avg = n ? deltas.reduce(function (a, b) { return a + b; }, 0) / n : 0;
     var inTol = done.filter(function (r) { return judge(r.time, r.target).kind === 'keep'; }).length;
     var best = n ? Math.min.apply(null, done.map(function (r) { return r.time; })) : 0;
+    if(n){
+      history.unshift({at:new Date().toISOString(),reps:done.map(function(r){
+        return {d:r.dist,t:r.target,time:r.time,via:r.via};
+      })});
+      history=history.slice(0,20);saveHistory();renderHistory();
+    }
     var vd = $('#verdict'); vd.hidden = false;
     var kind = Math.abs(avg) / (done[0] ? done[0].target : 1) * 100 <= S.tol ? 'keep' : (avg > 0 ? 'slow' : 'fast');
     vd.dataset.kind = kind;
     $('#vEyebrow').textContent = 'Bilan de la séance';
     $('#vWord').textContent = n + ' série' + (n > 1 ? 's' : '');
-    $('#vTime').textContent = 'Meilleur ' + fmtT(best) + ' s';
+    $('#vTime').textContent = done.every(function(r){return r.dist===done[0].dist;}) ? 'Meilleur ' + fmtT(best) + ' s' : 'Distances variées';
     var chip = $('#vDelta'); chip.dataset.kind = kind; chip.textContent = 'Écart moyen ' + sgn(avg) + ' s';
     $('#vNote').textContent = inTol + ' série' + (inTol > 1 ? 's' : '') + ' dans la marge de la cible sur ' + n + '.';
     $('#rest').hidden = true;
@@ -526,6 +606,15 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
     else if (phase === 'finished') fullReset();
   });
   $('#reset').addEventListener('click', fullReset);
+  document.querySelectorAll('[data-distance]').forEach(function(btn){
+    btn.addEventListener('click',function(){
+      var newD=Number(btn.dataset.distance),oldD=num($('#gDist').value),oldT=num($('#gTime').value);
+      $('#gDist').value=String(newD);
+      if(oldD>0&&oldT>0) $('#gTime').value=nf(oldT*newD/oldD);
+      $('#status').textContent='Distance '+newD+
+        ' m sélectionnée. Vérifie la cible puis crée la séance.';
+    });
+  });
   $('#add').addEventListener('click', function () {
     var last = S.reps[S.reps.length - 1] || { d: 60, t: 8.5 };
     S.reps.push({ d: last.d, t: last.t }); save(); renderPlan();
@@ -537,15 +626,22 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
     save(); fullReset();
   });
 
-  function modeHint() {
-    $('#modeHint').textContent = S.mode === 'gps'
-      ? 'Le GPS mesure ta vitesse (effet Doppler) et en déduit la distance, puis déclenche le bip d\'arrivée tout seul. Garde le téléphone dehors, ciel dégagé. Le GPS ne fonctionne que si la page est ouverte depuis ton propre hébergement en https, pas depuis la page Claude. Sinon l\'appli passe en manuel au bout de 6 s.'
-      : 'Tu touches Arrivée toi-même (ou un partenaire le fait) au passage de la ligne. Le chrono et les conseils fonctionnent pareil.';
+  function modeHint(){
+    $('#gpsPrep').hidden=S.mode!=='gps';
+    $('#modeHint').textContent=S.mode==='gps'
+      ? 'Prépare le GPS avant de partir, téléphone sous ciel dégagé. L’arrivée automatique exige des relevés cohérents ; sinon touche Arrivée. Sur de courtes distances, le GPS du téléphone reste approximatif.'
+      : 'Tu touches Arrivée toi-même (ou un partenaire) au passage de la ligne. Mesure et marque la distance sur la piste.';
   }
+  $('#prepGps').addEventListener('click',function(){
+    if(gps.id!==null){
+      stopGps();gps.auto=false;gps.err=true;gps.last=null;idlePill();$('#gpsQuality').textContent='GPS arrêté';
+    }else startGps();
+  });
   document.querySelectorAll('input[name="mode"]').forEach(function (el) {
     el.checked = el.value === S.mode;
     el.addEventListener('change', function () {
-      S.mode = el.value; save(); modeHint(); idlePill(); gps.err = false; updateAll();
+      if(gps.id!==null) stopGps();
+      S.mode=el.value;save();modeHint();idlePill();gps.err=false;gps.auto=false;gps.last=null;updateAll();
       if (phase === 'idle') resetClock();
     });
   });
@@ -562,9 +658,48 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
   bindNum('sTol', 'tol', 0, 20, false);
   $('#sVoice').checked = !!S.voice;
   $('#sVoice').addEventListener('change', function (e) { S.voice = e.target.checked; save(); });
+  $('#sAuto').checked=!!S.autoNext;
+  $('#sAuto').addEventListener('change',function(e){S.autoNext=e.target.checked;save();});
+  $('#sVibrate').checked=!!S.vibrate;
+  $('#sVibrate').addEventListener('change',function(e){S.vibrate=e.target.checked;save();});
+  function renderHistory(){
+    var box=$('#historyList');box.innerHTML='';
+    $('#exportHistory').disabled=history.length===0;
+    $('#clearHistory').disabled=history.length===0;
+    if(!history.length){box.textContent='Aucune séance terminée pour le moment.';return;}
+    history.slice(0,20).forEach(function(s){
+      var rs=Array.isArray(s.reps)?s.reps.filter(function(r){return r&&r.time>0;}):[];
+      if(!rs.length)return;
+      var best=Math.min.apply(null,rs.map(function(r){return r.time;}));
+      var avg=rs.reduce(function(acc,r){return acc+r.time;},0)/rs.length;
+      var div=document.createElement('div');div.className='history-entry';
+      var strong=document.createElement('strong'),txt=document.createElement('span');
+      strong.textContent=new Date(s.at).toLocaleDateString('fr-FR',
+        {day:'2-digit',month:'short',year:'numeric'})+' · '+rs.length+' séries';
+      txt.textContent='Meilleur '+fmtT(best)+' s · moyenne '+fmtT(avg)+
+        ' s · '+nf(rs[0].d,0)+' m (première série)';
+      div.append(strong,txt);box.appendChild(div);
+    });
+  }
+  $('#clearHistory').addEventListener('click',function(){
+    if(!confirm('Effacer les séances enregistrées sur cet appareil ?'))return;
+    history=[];saveHistory();renderHistory();
+  });
+  $('#exportHistory').addEventListener('click',function(){
+    if(!history.length)return;
+    var lines=['Date;Série;Distance (m);Cible (s);Temps (s);Mode'];
+    history.forEach(function(s){(s.reps||[]).forEach(function(r,i){
+      lines.push([s.at,i+1,r.d,r.t,r.time,r.via].join(';'));
+    });});
+    var url=URL.createObjectURL(new Blob(['\uFEFF'+lines.join('\r\n')],
+      {type:'text/csv;charset=utf-8'}));
+    var a=document.createElement('a');a.href=url;a.download='chrono-sprint-historique.csv';a.click();
+    setTimeout(function(){URL.revokeObjectURL(url);},1000);
+  });
   document.addEventListener('visibilitychange', function () { if (!document.hidden && (phase === 'countdown' || phase === 'running' || phase === 'done')) wake(); });
 
-  modeHint(); idlePill(); renderPlan(); resetClock();
+  modeHint(); idlePill(); renderPlan(); resetClock(); renderHistory();
+  if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(function(){});
 })();
 </script>
 
