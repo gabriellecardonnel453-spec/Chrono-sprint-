@@ -278,26 +278,63 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
   function buzz(pattern) { if (S.vibrate && navigator.vibrate) try { navigator.vibrate(pattern); } catch (e) {} }
   var R = function () { return S.reps[cur]; };
 
-  /* Son */
-  var ac = null;
+  /* Audio WebAudio : les signaux du décompte sont programmés à l'avance
+     sur l'horloge audio, sans attendre la précision des setTimeout JavaScript. */
+  var ac=null, soundQueue=[], countdownDeadline=0, countdownAudio=false;
   function ensureAudio() {
-    try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === 'suspended') ac.resume(); } catch (e) {}
-  }
-  function tone(freq, dur, vol, type, when) {
-    if (!ac) return;
     try {
-      var t = ac.currentTime + (when || 0), o = ac.createOscillator(), g = ac.createGain();
-      o.type = type || 'square'; o.frequency.value = freq;
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(vol, t + 0.01);
-      g.gain.setValueAtTime(vol, t + dur - 0.05);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-      o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t + dur + 0.03);
-    } catch (e) {}
+      ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+      if (ac.state==='suspended') return ac.resume();
+    } catch(e) { ac=null; }
+    return Promise.resolve();
   }
-  var tickBeep = function () { tone(660, 0.13, 0.5, 'sine'); };
-  var startBeep = function () { tone(1000, 0.9, 0.7, 'square'); tone(1500, 0.9, 0.22, 'square'); };
-  var endBeep = function () { tone(1400, 0.9, 0.7, 'square'); tone(2100, 0.9, 0.22, 'square'); };
+  function toneAt(freq,dur,vol,type,at,remember){
+    if(!ac || ac.state!=='running')return;
+    try {
+      var t=Math.max(at,ac.currentTime+0.008),o=ac.createOscillator(),g=ac.createGain();
+      o.type=type||'sine';o.frequency.value=freq;
+      g.gain.setValueAtTime(0.0001,t);
+      g.gain.exponentialRampToValueAtTime(Math.min(0.34,vol),t+0.012);
+      g.gain.setValueAtTime(Math.min(0.34,vol),Math.max(t+0.012,t+dur-0.035));
+      g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+      o.connect(g);g.connect(ac.destination);
+      o.start(t);o.stop(t+dur+0.03);
+      if(remember)soundQueue.push(o);
+      o.onended=function(){try{o.disconnect();g.disconnect();}catch(e){}};
+    }catch(e){}
+  }
+  function tone(freq,dur,vol,type,when){
+    if(ac)toneAt(freq,dur,vol,type,ac.currentTime+Math.max(0.01,when||0),false);
+  }
+  function cancelScheduledAudio(){
+    soundQueue.forEach(function(o){try{o.stop();}catch(e){}});
+    soundQueue=[];countdownAudio=false;
+  }
+  function timeOfAudioMark(mark){
+    try {
+      var ts=ac.getOutputTimestamp&&ac.getOutputTimestamp();
+      if(ts && ts.performanceTime>0 && ts.contextTime>=0)
+        return ts.performanceTime+(mark-ts.contextTime)*1000;
+    }catch(e){}
+    return performance.now()+(mark-ac.currentTime)*1000;
+  }
+  function scheduleStartSounds(seconds){
+    countdownAudio=false;
+    if(!ac||ac.state!=='running'){
+      countdownDeadline=performance.now()+seconds*1000;
+      return;
+    }
+    var start=ac.currentTime+0.22;
+    for(var i=0;i<seconds;i++)toneAt(660,0.12,0.25,'sine',start+i,true);
+    var goMark=start+seconds;
+    toneAt(980,0.42,0.34,'square',goMark,true);
+    toneAt(1480,0.42,0.13,'sine',goMark,true);
+    countdownDeadline=timeOfAudioMark(goMark);
+    countdownAudio=true;
+  }
+  var tickBeep=function(){tone(660,0.12,0.26,'sine');};
+  var startBeep=function(){tone(980,0.42,0.34,'square');tone(1480,0.42,0.13,'sine');};
+  var endBeep=function(){tone(1260,0.38,0.34,'sine');tone(1800,0.38,0.12,'sine');};
   function say(text) {
     if (!S.voice) return;
     try { var u = new SpeechSynthesisUtterance(text); u.lang = 'fr-FR'; u.rate = 1.05; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch (e) {}
@@ -509,35 +546,44 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
   }
 
   /* Déroulé d'une série */
-  function startCountdown() {
-    ensureAudio();
+  function startCountdown(){
+    if(phase!=='idle')return;
     if(S.mode==='gps' && !gpsReady(gps.last)){
-      if(gps.id===null) startGps();
-      $('#status').textContent='Acquisition GPS : attends « GPS prêt » avant Départ.'+
-        ' Sinon passe en mode Manuel.';
+      if(gps.id===null)startGps();
+      $('#status').textContent='GPS en recherche : attends le signal vert ou choisis Manuel.';
       return;
     }
-    wake();
-    try { if(window.speechSynthesis) speechSynthesis.cancel(); } catch(e) {}
-    phase = 'countdown';
-    $('#verdict').hidden = true;
-    if (S.mode === 'gps') startGps(); else setPill('off', 'Mode manuel');
-    resetClock(); updateAll();
-    $('#status').textContent = S.countdown > 0 ? 'Prépare-toi. Le chrono démarre au gros bip.' : '';
-    var n = S.countdown;
-    (function tick() {
-      if (phase !== 'countdown') return;
-      if (n > 0) { $('#clock').textContent = n; tickBeep(); n--; cdT = setTimeout(tick, 1000); }
-      else go();
-    })();
+    phase='countdown';wake();
+    $('#verdict').hidden=true;
+    try{if(window.speechSynthesis)speechSynthesis.cancel();}catch(e){}
+    resetClock();updateAll();
+    $('#status').textContent='Prépare-toi : départ au long bip.';
+    var n=S.countdown;
+    function arm(){
+      if(phase!=='countdown')return;
+      scheduleStartSounds(n);
+      function paint(){
+        if(phase!=='countdown')return;
+        var left=countdownDeadline-performance.now();
+        if(left<=0){
+          clearInterval(cdT);cdT=0;
+          go(countdownDeadline,countdownAudio);
+        }else{
+          $('#clock').textContent=String(Math.ceil(left/1000));
+        }
+      }
+      paint();cdT=setInterval(paint,30);
+    }
+    ensureAudio().then(arm,arm);
   }
-  function cancelCountdown() {
-    clearTimeout(cdT); stopGps(); unwake(); phase = 'idle'; idlePill(); resetClock(); updateAll();
-    $('#status').textContent = 'Départ annulé.';
+  function cancelCountdown(){
+    clearInterval(cdT);cdT=0;cancelScheduledAudio();
+    stopGps();unwake();phase='idle';idlePill();resetClock();updateAll();
+    $('#status').textContent='Départ annulé.';
   }
-  function go(){
+  function go(plannedStart,soundScheduled){
     phase='running';
-    t0=performance.now();lastPaint=0;gps.dist=0;gps.est=0;gps.goodFixes=0;
+    t0=plannedStart||performance.now();lastPaint=0;gps.dist=0;gps.est=0;gps.goodFixes=0;
     gps.auto=false;
     if(S.mode==='gps'&&!gps.err){
       var gl=gps.last;
@@ -547,7 +593,10 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
           dist:0,acc:gl.acc};
       }else gpsFail('GPS non prêt au départ');
     }
-    startBeep();buzz([170,65,170]);updateAll();
+    if(!soundScheduled)startBeep();
+    // Le bip pré-programmé reste calé à l'horloge audio ; on garde ce t0 même si l'UI réagit tard.
+    soundQueue=[];countdownAudio=false;
+    buzz([170,65,170]);updateAll();
     $('#status').textContent=gps.auto?'Cours ! Distance GPS estimée.':
       'Cours ! Touche Arrivée à la ligne.';
     loop();
