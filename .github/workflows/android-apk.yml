@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - installation-mobile-android-ios-2026
+      - correctif-gps-xiaomi-2026
     paths:
       - 'android/**'
       - 'icon-512.png'
