@@ -9,6 +9,7 @@ import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.Bundle;
+import android.os.Build;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.view.View;
@@ -27,7 +28,6 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.Locale;
 
 /**
  * Sprint hors connexion : le site HTML est inclus dans l'APK et servi depuis
@@ -144,8 +144,9 @@ public class MainActivity extends Activity {
             c.put("longitude", location.getLongitude());
             c.put("accuracy", location.hasAccuracy() ? location.getAccuracy() : 999);
             c.put("speed", location.hasSpeed() ? Math.max(0f,location.getSpeed()) : JSONObject.NULL);
-            c.put("speedAccuracy", location.hasSpeedAccuracy()
-                ? location.getSpeedAccuracyMetersPerSecond() : JSONObject.NULL);
+            c.put("speedAccuracy",
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && location.hasSpeedAccuracy()
+                    ? location.getSpeedAccuracyMetersPerSecond() : JSONObject.NULL);
             JSONObject payload = new JSONObject();
             payload.put("coords", c);
             // Heure de capture dérivée de l'horloge monotone Android (pas de réseau).
@@ -160,7 +161,12 @@ public class MainActivity extends Activity {
     private void startNativeGps() {
         wantsGps = true;
         if (!hasFinePermission()) {
-            // Approximation réseau non suffisante pour chronométrer un sprint.
+            if (checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED) {
+                wantsGps=false;
+                dispatchError("Active « Position précise » pour Sprint dans les réglages");
+                return;
+            }
             askPermission();
             return;
         }
