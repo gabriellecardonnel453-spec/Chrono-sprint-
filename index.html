@@ -262,7 +262,7 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
     get: function () { try { return JSON.parse(localStorage.getItem(KEY)); } catch (e) { return null; } },
     set: function (v) { try { localStorage.setItem(KEY, JSON.stringify(v)); } catch (e) {} }
   };
-  var S = { reps: [], rest: 120, countdown: 3, tol: 2, mode: 'manual', voice: true, autoNext: false, vibrate: true };
+  var S = { reps: [], rest: 120, countdown: 3, tol: 2, mode: 'manual', voice: false, autoNext: false, vibrate: true };
   for (var i = 0; i < 6; i++) S.reps.push({ d: 60, t: 8.5 });
   var saved = store.get();
   if (saved && typeof saved === 'object') {
@@ -511,6 +511,10 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
     var m = $('#main'); m.textContent = labels[phase]; m.dataset.phase = phase;
     $('#clock').dataset.phase = phase;
     ['gReps', 'gDist', 'gTime', 'gen', 'add', 'reset'].forEach(function (id) { $('#' + id).disabled = inRun; });
+    document.querySelectorAll('[data-distance]').forEach(function(btn){
+      btn.disabled=inRun;
+      btn.dataset.active=S.reps.every(function(x){return x.d===Number(btn.dataset.distance);})?'true':'false';
+    });
     S.reps.forEach(function (rep, i) {
       var row = $('.row[data-i="' + i + '"]'); if (!row) return;
       row.dataset.current = (i === cur && phase !== 'finished') ? 'true' : 'false';
@@ -728,11 +732,16 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
   $('#reset').addEventListener('click', fullReset);
   document.querySelectorAll('[data-distance]').forEach(function(btn){
     btn.addEventListener('click',function(){
-      var newD=Number(btn.dataset.distance),oldD=num($('#gDist').value),oldT=num($('#gTime').value);
-      $('#gDist').value=String(newD);
-      if(oldD>0&&oldT>0) $('#gTime').value=nf(oldT*newD/oldD);
-      $('#status').textContent='Distance '+newD+
-        ' m sélectionnée. Vérifie la cible puis crée la séance.';
+      if(phase==='running'||phase==='countdown')return;
+      var distance=Number(btn.dataset.distance);
+      var old=S.reps[0]||{d:60,t:8.5};
+      // Proportion de la vitesse moyenne seulement, cible modifiable avant la séance.
+      var target=Math.max(0.1,Math.round(old.t*distance/old.d*100)/100);
+      S.reps=S.reps.map(function(){return {d:distance,t:target};});
+      $('#gDist').value=String(distance);
+      $('#gTime').value=nf(target);
+      save();fullReset();
+      $('#status').textContent=distance+' m prêts. Cible : '+fmtT(target)+' s (modifiable).';
     });
   });
   $('#add').addEventListener('click', function () {
@@ -749,8 +758,8 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
   function modeHint(){
     $('#gpsPrep').hidden=S.mode!=='gps';
     $('#modeHint').textContent=S.mode==='gps'
-      ? 'Prépare le GPS avant de partir, téléphone sous ciel dégagé. L’arrivée automatique exige des relevés cohérents ; sinon touche Arrivée. Sur de courtes distances, le GPS du téléphone reste approximatif.'
-      : 'Tu touches Arrivée toi-même (ou un partenaire) au passage de la ligne. Mesure et marque la distance sur la piste.';
+      ? 'GPS estimé · fonctionne sans Internet dans l’APK. Signal à ciel ouvert requis.'
+      : 'Piste balisée · touche Arrivée au passage de la ligne.';
   }
   $('#prepGps').addEventListener('click',function(){
     if(gps.id!==null){
@@ -821,8 +830,12 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
   });
   document.addEventListener('visibilitychange', function () { if (!document.hidden && (phase === 'countdown' || phase === 'running' || phase === 'done')) wake(); });
 
+  $('#gReps').value=String(S.reps.length);
+  $('#gDist').value=String(S.reps[0].d).replace('.',',');
+  $('#gTime').value=nf(S.reps[0].t);
   modeHint(); idlePill(); renderPlan(); resetClock(); renderHistory();
-  if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(function(){});
+  if(!window.SprintAndroidGPS && 'serviceWorker' in navigator && window.isSecureContext)
+    navigator.serviceWorker.register('./sw.js').catch(function(){});
 })();
 </script>
 
