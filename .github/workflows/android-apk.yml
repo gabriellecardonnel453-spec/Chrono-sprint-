@@ -6,8 +6,11 @@ on:
       - main
       - installation-mobile-android-ios-2026
       - correctif-gps-xiaomi-2026
+      - sprint-offline-simple-audio-2026
     paths:
       - 'android/**'
+      - 'index.html'
+      - 'manifest.webmanifest'
       - 'icon-512.png'
       - '.github/workflows/android-apk.yml'
 
@@ -34,11 +37,19 @@ jobs:
         run: |
           mkdir -p android/app/src/main/res/drawable
           cp icon-512.png android/app/src/main/res/drawable/chrono_sprint.png
+      - name: Embarquer l'application hors connexion
+        run: |
+          mkdir -p android/app/src/main/assets
+          cp index.html manifest.webmanifest icon-512.png android/app/src/main/assets/
+          test -s android/app/src/main/assets/index.html
       - name: Construire l'APK
         working-directory: android
         run: gradle :app:assembleDebug --no-daemon
       - name: Vérifier l'APK
-        run: test -s android/app/build/outputs/apk/debug/app-debug.apk
+        run: |
+          test -s android/app/build/outputs/apk/debug/app-debug.apk
+          unzip -p android/app/build/outputs/apk/debug/app-debug.apk assets/index.html | grep -q 'Chrono Sprint'
+          unzip -p android/app/build/outputs/apk/debug/app-debug.apk assets/index.html | grep -q 'scheduleStartSounds'
       - name: Fournir l'APK à télécharger
         uses: actions/upload-artifact@v4
         with:
