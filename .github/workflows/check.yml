@@ -27,7 +27,10 @@ jobs:
           }
           const manifest = JSON.parse(fs.readFileSync('manifest.webmanifest','utf8'));
           assert.equal(manifest.display, 'standalone');
-          assert.ok(script[1].includes('GPS trop imprécis'));
+          assert.ok(script[1].includes('GPS insuffisant pour mesure automatique'));
+          assert.ok(script[1].includes('scheduleStartSounds'));
+          assert.ok(script[1].includes('distanceLive'));
+          assert.ok(!html.includes('fonts.googleapis.com'), 'Police distante détectée');
           assert.ok(script[1].includes('renderHistory'));
           console.log('Tests statiques OK');
           NODE
