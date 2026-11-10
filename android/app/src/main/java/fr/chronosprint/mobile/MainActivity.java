@@ -149,7 +149,9 @@ public class MainActivity extends Activity {
             dispatchError("GPS Android indisponible");
             return;
         }
-        final boolean gpsOn = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER);
+        final boolean gpsOn =
+            checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            && locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER);
         final boolean networkOn = locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
         if (!gpsOn && !networkOn) {
             dispatchError("Active la localisation du téléphone");
