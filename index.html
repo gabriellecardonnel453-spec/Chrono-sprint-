@@ -298,7 +298,7 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
   /* GPS : l'arrivée n'est validée que par un nouveau relevé fiable.
      Une position et sa précision ne garantissent jamais une mesure métrique parfaite. */
   var gps = {id:null,last:null,prev:null,startPos:null,dist:0,est:0,err:false,
-    auto:false,goodFixes:0,timer:null};
+    auto:false,goodFixes:0,timer:null,native:false};
   function setPill(state,label){$('#gps').dataset.state=state;$('#gpsText').textContent=label;}
   function idlePill(){setPill('off',S.mode==='gps'?'GPS à préparer':'Mode manuel');}
   function hav(a,b){
@@ -311,28 +311,60 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
     return isFinite(age)&&age>=-500&&age<4000 ? now-age : NaN;
   }
   function gpsReady(f){
-    return !!(f&&f.acc<=15&&performance.now()-f.t<2200&&(f.v!==null||f.acc<=6));
+    return !!(f && f.acc<=25 && performance.now()-f.t<4500);
   }
   function startGps(){
     if(S.mode!=='gps'||gps.id!==null)return;
     gps.err=false;gps.last=null;gps.prev=null;gps.dist=0;gps.auto=false;gps.goodFixes=0;
     $('#prepGps').textContent='Arrêter le GPS';
-    if(!navigator.geolocation||!window.isSecureContext){gpsFail('GPS indisponible');return;}
+    var isAndroidNative = !!(window.SprintAndroidGPS &&
+      typeof window.SprintAndroidGPS.start === 'function');
+    if(!isAndroidNative && (!navigator.geolocation || !window.isSecureContext)){
+      gpsFail('GPS indisponible');return;
+    }
     setPill('wait','Recherche GPS');
-    $('#gpsQuality').textContent='Acquisition GPS en cours…';
+    $('#gpsQuality').textContent='Acquisition GPS en cours (extérieur recommandé)…';
     clearTimeout(gps.timer);
-    gps.timer=setTimeout(function(){if(!gps.last)gpsFail('GPS introuvable');},12000);
-    try{
-      gps.id=navigator.geolocation.watchPosition(onPos,onGpsErr,
-        {enableHighAccuracy:true,maximumAge:0,timeout:12000});
-    }catch(e){gpsFail('GPS indisponible');}
+    gps.timer=setTimeout(function(){
+      if(!gps.last) gpsFail('Pas de position : vérifie la localisation et les autorisations');
+    },30000);
+    if(isAndroidNative){
+      gps.native=true;gps.id=-1;
+      try{window.SprintAndroidGPS.start();}
+      catch(e){gpsFail('GPS Android indisponible');}
+    }else{
+      gps.native=false;
+      try{
+        gps.id=navigator.geolocation.watchPosition(onPos,onGpsErr,
+          {enableHighAccuracy:true,maximumAge:0,timeout:30000});
+      }catch(e){gpsFail('GPS indisponible');}
+    }
   }
   function stopGps(){
     clearTimeout(gps.timer);
-    if(gps.id!==null){try{navigator.geolocation.clearWatch(gps.id);}catch(e){}gps.id=null;}
+    if(gps.id!==null){
+      if(gps.native){
+        try{window.SprintAndroidGPS.stop();}catch(e){}
+      }else{
+        try{navigator.geolocation.clearWatch(gps.id);}catch(e){}
+      }
+      gps.id=null;
+    }
+    gps.native=false;
     $('#prepGps').textContent='Préparer le GPS';
   }
-  function onGpsErr(e){gpsFail(e&&e.code===1?'GPS refusé':'Signal GPS perdu');}
+  function onGpsErr(e){
+    var msg=e&&e.code===1?'Autorisation GPS refusée':
+      e&&e.code===3?'GPS sans réponse (délai dépassé)':'Position GPS indisponible';
+    gpsFail(msg);
+  }
+  // Relevés transmis par le GPS du système Android, utilisés seulement dans l'APK.
+  window.onSprintNativePosition=function(pos){
+    if(gps.id===-1 && gps.native && pos && pos.coords) onPos(pos);
+  };
+  window.onSprintNativeError=function(msg){
+    if(gps.id===-1 && gps.native) gpsFail(msg||'Erreur de localisation Android');
+  };
   function gpsFail(msg){
     gps.err=true;gps.auto=false;stopGps();setPill('bad',msg);
     $('#gpsQuality').textContent=msg+' · chronométrage manuel disponible';
@@ -349,8 +381,11 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
     clearTimeout(gps.timer);
     var ready=gpsReady(fix);
     setPill(ready?'ok':'wait','GPS ±'+Math.round(fix.acc)+' m');
-    $('#gpsQuality').textContent=ready?'Signal prêt · distance estimée':
-      'Signal insuffisant · attends ou choisis Manuel';
+    $('#gpsQuality').textContent=ready
+      ? (fix.acc<=10?'Signal GPS correct · distance estimée':
+          'GPS détecté mais précision ±'+Math.round(fix.acc)+' m · estimation')
+      : 'GPS détecté, précision ±'+Math.round(fix.acc)+
+        ' m · attends à ciel ouvert ou utilise Manuel';
     if(phase!=='running'||!gps.auto)return;
     var pv=gps.prev,dt=(fix.t-pv.t)/1000;
     if(dt<=0.12)return;
@@ -365,9 +400,12 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
       if(pv.acc<=8&&fix.acc<=8&&displacement>step+12){
         gpsFail('Positions GPS incohérentes');return;
       }
-    }else if(fix.acc<=6&&pv.acc<=6&&displacement/dt<=16){
-      v=displacement/dt;step=displacement;
-    }else{gpsFail('GPS trop imprécis');return;}
+    }else if(fix.acc<=20 && pv.acc<=20 && displacement/dt<=16){
+      // Certains téléphones ne fournissent pas coords.speed. Recours aux positions,
+      // moins précises ; ne pas extrapoler l'arrivée entre deux mesures.
+      v=displacement/dt;
+      step=displacement;
+    }else{gpsFail('GPS trop imprécis pour mesurer le sprint');return;}
     var nextDist=pv.dist+Math.max(0,step);
     // Correction légère et bornée par le déplacement direct lorsqu'il est cohérent.
     if(gps.startPos&&fix.acc<=8&&gps.startPos.acc<=8&&nextDist>20){
@@ -459,7 +497,14 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
 
   /* Déroulé d'une série */
   function startCountdown() {
-    ensureAudio(); wake();
+    ensureAudio();
+    if(S.mode==='gps' && !gpsReady(gps.last)){
+      if(gps.id===null) startGps();
+      $('#status').textContent='Acquisition GPS : attends « GPS prêt » avant Départ.'+
+        ' Sinon passe en mode Manuel.';
+      return;
+    }
+    wake();
     try { if(window.speechSynthesis) speechSynthesis.cancel(); } catch(e) {}
     phase = 'countdown';
     $('#verdict').hidden = true;
