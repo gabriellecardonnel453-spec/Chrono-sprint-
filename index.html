@@ -326,7 +326,7 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
     $('#gpsQuality').textContent='Acquisition GPS en cours (extérieur recommandé)…';
     clearTimeout(gps.timer);
     gps.timer=setTimeout(function(){
-      if(!gps.last) gpsFail('Pas de position : vérifie la localisation et les autorisations');
+      if(!gpsReady(gps.last)) gpsFail('Signal GPS trop faible : active la position précise et sors à ciel ouvert');
     },30000);
     if(isAndroidNative){
       gps.native=true;gps.id=-1;
@@ -378,8 +378,8 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
     var fix={lat:c.latitude,lon:c.longitude,acc:c.accuracy,t:t,
       v:(c.speed!==null&&isFinite(c.speed)&&c.speed>=0)?c.speed:null};
     gps.last=fix;
-    clearTimeout(gps.timer);
     var ready=gpsReady(fix);
+    if(ready) clearTimeout(gps.timer);
     setPill(ready?'ok':'wait','GPS ±'+Math.round(fix.acc)+' m');
     $('#gpsQuality').textContent=ready
       ? (fix.acc<=10?'Signal GPS correct · distance estimée':
