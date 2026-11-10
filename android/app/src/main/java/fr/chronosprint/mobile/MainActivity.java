@@ -10,40 +10,48 @@ import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.Bundle;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.view.View;
 import android.view.WindowManager;
-import android.webkit.GeolocationPermissions;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-/** Conteneur Android léger avec passerelle GPS native (site officiel seulement). */
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Locale;
+
+/**
+ * Sprint hors connexion : le site HTML est inclus dans l'APK et servi depuis
+ * une origine HTTPS virtuelle, sans chargement depuis GitHub ni accès réseau.
+ * Le GPS vient du capteur GNSS du téléphone, jamais de la triangulation réseau.
+ */
 public class MainActivity extends Activity {
-    private static final String APP_URL =
-        "https://gabriellecardonnel453-spec.github.io/Chrono-sprint-/";
-    private static final String APP_ORIGIN = "https://gabriellecardonnel453-spec.github.io";
+    private static final String ORIGIN = "https://appassets.androidplatform.net";
+    private static final String HOME = ORIGIN + "/index.html";
     private static final int LOCATION_REQUEST = 19;
 
     private WebView web;
     private LocationManager locationManager;
     private LocationListener locationListener;
     private boolean wantsGps = false;
-    private GeolocationPermissions.Callback waitingLocation;
-    private String waitingOrigin;
+    private boolean inForeground = true;
+    private long lastFixNanos = 0;
 
-    private boolean hasLocationPermission() {
+    private boolean hasFinePermission() {
         return checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
-            == PackageManager.PERMISSION_GRANTED
-            || checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION)
             == PackageManager.PERMISSION_GRANTED;
     }
 
-    private void requestLocationPermission() {
+    private void askPermission() {
         requestPermissions(new String[] {
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION
@@ -52,57 +60,66 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
-        getWindow().setStatusBarColor(Color.rgb(236, 239, 241));
-        getWindow().getDecorView()
-            .setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+        getWindow().setStatusBarColor(Color.rgb(236,239,241));
+        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        locationManager = (LocationManager)getSystemService(Context.LOCATION_SERVICE);
 
         web = new WebView(this);
-        web.setBackgroundColor(Color.rgb(236, 239, 241));
+        web.setBackgroundColor(Color.rgb(236,239,241));
         WebSettings settings = web.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
-        settings.setGeolocationEnabled(true);
+        settings.setGeolocationEnabled(false); // Uniquement la passerelle GPS native.
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(false);
+        settings.setAllowFileAccessFromFileURLs(false);
+        settings.setAllowUniversalAccessFromFileURLs(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+        settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
 
         web.addJavascriptInterface(new SprintGpsBridge(), "SprintAndroidGPS");
         web.setWebViewClient(new WebViewClient() {
-            @Override public boolean shouldOverrideUrlLoading(
-                    WebView view, WebResourceRequest request) {
+            @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                return !HOME.equals(request.getUrl().toString());
+            }
+            @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 String url = request.getUrl().toString();
-                return !(url.startsWith(APP_URL)
-                    || url.equals(APP_URL.substring(0, APP_URL.length() - 1)));
+                if (!url.startsWith(ORIGIN + "/")) return blocked();
+                String path = url.substring((ORIGIN + "/").length());
+                // Aucune URL arbitraire n'est exposée à l'interface JavaScript native.
+                if (!("index.html".equals(path) || "icon-512.png".equals(path)
+                    || "manifest.webmanifest".equals(path))) return blocked();
+                String mime = path.endsWith(".png") ? "image/png" :
+                    path.endsWith(".webmanifest") ? "application/manifest+json" : "text/html";
+                try {
+                    WebResourceResponse response = new WebResourceResponse(
+                        mime, path.endsWith(".png") ? null : "UTF-8", getAssets().open(path));
+                    HashMap<String,String> headers = new HashMap<>();
+                    headers.put("Cache-Control", "no-store");
+                    headers.put("X-Content-Type-Options", "nosniff");
+                    response.setResponseHeaders(headers);
+                    return response;
+                } catch (IOException e) {
+                    return new WebResourceResponse("text/plain", "UTF-8", 404, "Not Found",
+                        Collections.emptyMap(), new ByteArrayInputStream(new byte[0]));
+                }
+            }
+            private WebResourceResponse blocked() {
+                return new WebResourceResponse("text/plain", "UTF-8", 403, "Forbidden",
+                    Collections.emptyMap(), new ByteArrayInputStream(new byte[0]));
             }
         });
-        web.setWebChromeClient(new WebChromeClient() {
-            @Override public void onGeolocationPermissionsShowPrompt(
-                    String origin, GeolocationPermissions.Callback callback) {
-                // Secours pour l'API GPS du navigateur intégré.
-                if (!APP_ORIGIN.equals(origin)) {
-                    callback.invoke(origin, false, false);
-                    return;
-                }
-                if (hasLocationPermission()) {
-                    callback.invoke(origin, true, false);
-                } else {
-                    waitingLocation = callback;
-                    waitingOrigin = origin;
-                    requestLocationPermission();
-                }
-            }
-        });
+        web.setWebChromeClient(new WebChromeClient());
         setContentView(web);
-        web.loadUrl(APP_URL);
+        web.loadUrl(HOME);
     }
 
-    /** Les méthodes sont appelées par le JavaScript du site, et jamais en accès direct. */
     private class SprintGpsBridge {
         @JavascriptInterface public void start() {
             runOnUiThread(() -> startNativeGps());
         }
-
         @JavascriptInterface public void stop() {
             runOnUiThread(() -> stopNativeGps());
         }
@@ -110,72 +127,63 @@ public class MainActivity extends Activity {
 
     private void dispatchError(String message) {
         if (web == null) return;
-        String escaped = JSONObject.quote(message);
         web.evaluateJavascript("window.onSprintNativeError && window.onSprintNativeError("
-            + escaped + ");", null);
+            + JSONObject.quote(message) + ");", null);
     }
 
     private void dispatchFix(Location location) {
-        if (!wantsGps || web == null || location == null) return;
+        if (!wantsGps || !inForeground || web == null || location == null) return;
+        long fixNanos = location.getElapsedRealtimeNanos();
+        long ageNanos = SystemClock.elapsedRealtimeNanos() - fixNanos;
+        if (fixNanos <= lastFixNanos || ageNanos < 0 || ageNanos > 4_000_000_000L) return;
+        if (!LocationManager.GPS_PROVIDER.equals(location.getProvider())) return;
+        lastFixNanos = fixNanos;
         try {
             JSONObject c = new JSONObject();
             c.put("latitude", location.getLatitude());
             c.put("longitude", location.getLongitude());
             c.put("accuracy", location.hasAccuracy() ? location.getAccuracy() : 999);
-            if (location.hasSpeed()) {
-                c.put("speed", Math.max(0.0f, location.getSpeed()));
-            } else {
-                c.put("speed", JSONObject.NULL);
-            }
+            c.put("speed", location.hasSpeed() ? Math.max(0f,location.getSpeed()) : JSONObject.NULL);
+            c.put("speedAccuracy", location.hasSpeedAccuracy()
+                ? location.getSpeedAccuracyMetersPerSecond() : JSONObject.NULL);
             JSONObject payload = new JSONObject();
             payload.put("coords", c);
-            payload.put("timestamp", location.getTime());
+            // Heure de capture dérivée de l'horloge monotone Android (pas de réseau).
+            payload.put("timestamp", System.currentTimeMillis() - ageNanos/1_000_000L);
             web.evaluateJavascript("window.onSprintNativePosition && window.onSprintNativePosition("
                 + payload.toString() + ");", null);
         } catch (JSONException e) {
-            dispatchError("Impossible de lire la position GPS");
+            dispatchError("Donnée GPS invalide");
         }
     }
 
     private void startNativeGps() {
         wantsGps = true;
-        if (!hasLocationPermission()) {
-            requestLocationPermission();
+        if (!hasFinePermission()) {
+            // Approximation réseau non suffisante pour chronométrer un sprint.
+            askPermission();
             return;
         }
         if (locationListener != null) return;
-        locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
-        if (locationManager == null) {
-            dispatchError("GPS Android indisponible");
+        if (locationManager == null || !locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+            dispatchError("Active GPS et Position précise dans les réglages");
             return;
         }
-        final boolean gpsOn =
-            checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-            && locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER);
-        final boolean networkOn = locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
-        if (!gpsOn && !networkOn) {
-            dispatchError("Active la localisation du téléphone");
-            return;
-        }
+        lastFixNanos = 0;
         locationListener = new LocationListener() {
-            @Override public void onLocationChanged(Location location) {
-                dispatchFix(location);
-            }
+            @Override public void onLocationChanged(Location location) { dispatchFix(location); }
             @Override public void onProviderDisabled(String provider) {
-                if (!locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
-                    && !locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                    dispatchError("Localisation désactivée dans Android");
-                }
+                if (LocationManager.GPS_PROVIDER.equals(provider))
+                    dispatchError("GPS désactivé dans les réglages Android");
             }
         };
         try {
-            if (gpsOn) locationManager.requestLocationUpdates(
-                LocationManager.GPS_PROVIDER, 300L, 0f, locationListener, Looper.getMainLooper());
-            if (networkOn) locationManager.requestLocationUpdates(
-                LocationManager.NETWORK_PROVIDER, 600L, 0f, locationListener, Looper.getMainLooper());
+            locationManager.requestLocationUpdates(
+                LocationManager.GPS_PROVIDER, 200L, 0f,
+                locationListener, Looper.getMainLooper());
         } catch (SecurityException | IllegalArgumentException e) {
             stopNativeGps();
-            dispatchError("Autorisation GPS Android manquante");
+            dispatchError("Autorise la position précise pour Sprint");
         }
     }
 
@@ -183,37 +191,38 @@ public class MainActivity extends Activity {
         wantsGps = false;
         if (locationManager != null && locationListener != null) {
             try { locationManager.removeUpdates(locationListener); }
-            catch (SecurityException ignored) { }
+            catch (SecurityException ignored) {}
         }
         locationListener = null;
     }
 
     @Override public void onRequestPermissionsResult(
-            int code, String[] permissions, int[] grants) {
+        int code, String[] permissions, int[] grants) {
         super.onRequestPermissionsResult(code, permissions, grants);
-        if (code != LOCATION_REQUEST) return;
-        boolean granted = hasLocationPermission();
-        if (waitingLocation != null) {
-            waitingLocation.invoke(waitingOrigin, granted, false);
-            waitingLocation = null;
-            waitingOrigin = null;
-        }
-        if (wantsGps) {
-            if (granted) startNativeGps();
-            else dispatchError("GPS refusé : autorise la position dans les réglages");
+        if (code == LOCATION_REQUEST && wantsGps) {
+            if (hasFinePermission()) startNativeGps();
+            else { wantsGps = false; dispatchError("Autorise « Position précise » dans Android"); }
         }
     }
 
+    @Override protected void onResume() {
+        super.onResume();
+        inForeground = true;
+        if (wantsGps && locationListener == null && hasFinePermission()) startNativeGps();
+    }
     @Override protected void onPause() {
-        // Évite les mises à jour GPS inutiles lorsque l'application quitte l'avant-plan.
+        inForeground = false;
+        if (locationManager != null && locationListener != null) {
+            try { locationManager.removeUpdates(locationListener); }
+            catch (SecurityException ignored) {}
+            locationListener = null;
+        }
         super.onPause();
     }
-
     @Override public void onBackPressed() {
-        if (web != null && web.canGoBack()) web.goBack();
-        else super.onBackPressed();
+        // Pas de navigation hors de l'interface installée.
+        super.onBackPressed();
     }
-
     @Override protected void onDestroy() {
         stopNativeGps();
         if (web != null) { web.destroy(); web = null; }
