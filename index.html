@@ -233,6 +233,7 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
       <div class="field"><label for="sTol">Marge (%)</label><input class="in" id="sTol" inputmode="decimal"></div>
     </div>
     <label class="check" for="sVoice"><input type="checkbox" id="sVoice">Annoncer le temps et le conseil à voix haute</label>
+    <button class="btn" id="testBeep" type="button">Tester le bip sonore</button>
     <label class="check" for="sAuto"><input type="checkbox" id="sAuto">Enchaîner les séries après la récupération et le compte à rebours</label>
     <label class="check" for="sVibrate"><input type="checkbox" id="sVibrate">Vibrations au départ et à l’arrivée (si compatibles)</label>
     <p class="hint">GPS = distance estimée, sans garantie métrique. Pour 30 à 100 m : piste balisée et arrivée manuelle ou cellules.</p>
@@ -583,7 +584,7 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
           clearInterval(cdT);cdT=0;
           go(countdownDeadline,countdownAudio);
         }else{
-          $('#clock').textContent=String(Math.ceil(left/1000));
+          $('#clock').textContent=String(Math.min(n,Math.ceil(left/1000)));
         }
       }
       paint();cdT=setInterval(paint,30);
@@ -788,6 +789,14 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
   bindNum('sCd', 'countdown', 0, 15, true);
   bindNum('sRest', 'rest', 0, 900, true);
   bindNum('sTol', 'tol', 0, 20, false);
+  $('#testBeep').addEventListener('click',function(){
+    ensureAudio().then(function(){
+      startBeep();
+      $('#status').textContent='Bip test envoyé. Augmente le volume média si tu ne l’entends pas.';
+    },function(){
+      $('#status').textContent='Son impossible : autorise l’audio du téléphone.';
+    });
+  });
   $('#sVoice').checked = !!S.voice;
   $('#sVoice').addEventListener('change', function (e) { S.voice = e.target.checked; save(); });
   $('#sAuto').checked=!!S.autoNext;
