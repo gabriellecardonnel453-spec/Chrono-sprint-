@@ -2,7 +2,7 @@
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#E8431A"><meta name="description" content="Chrono Sprint : mesure des sprints, séries et récupérations."><link rel="manifest" href="./manifest.webmanifest"><link rel="icon" href="./icon-512.png"><link rel="apple-touch-icon" href="./icon-512.png"><meta name="apple-mobile-web-app-title" content="Chrono Sprint"><meta name="apple-mobile-web-app-status-bar-style" content="default"><meta name="apple-mobile-web-app-capable" content="yes"><style>:root{color-scheme:light}html,body{margin:0}</style></head><body>
 <title>Chrono Sprint</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap">
+
 <style>
 /* Layout: une colonne de piste. Le chrono occupe le haut, la séance et les réglages se rangent dessous. */
 :root {
@@ -17,8 +17,8 @@
   --keep: #167A3B;
   --slow: #C01D4E;
   --warn: #B45309;
-  --f-display: 'Barlow Condensed', 'Arial Narrow', system-ui, sans-serif;
-  --f-body: 'Barlow', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --f-display: 'Arial Narrow', system-ui, sans-serif;
+  --f-body: system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -145,6 +145,15 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
 .history-actions .btn{flex:1}
 @media(max-width:380px){.cols,.row{grid-template-columns:20px 60px 65px minmax(0,1fr) 30px;gap:5px}.card{padding:14px}.x{width:30px}.clock{font-size:clamp(76px,24vw,110px)}}
 
+.mode-area{display:grid;gap:8px;margin-bottom:10px}
+.mode-area .hint{font-size:12px;line-height:1.3}
+.mode-area .seg label{padding:11px 8px}
+.distance-live{display:block;text-align:center;font:700 26px/1.1 var(--f-display);font-variant-numeric:tabular-nums;color:var(--accent);margin:4px 0}
+.plan-details{border-top:1px solid var(--line);margin-top:12px;padding-top:12px}
+.plan-details summary,.settings-advanced>summary{cursor:pointer;font:700 19px/1.2 var(--f-display);text-transform:uppercase}
+.plan-details[open] summary,.settings-advanced[open]>summary{margin-bottom:12px}
+.presets .btn[data-active="true"]{background:var(--ink);color:var(--bg)}
+.settings-advanced .set{margin-top:8px}
 </style>
 
 <main class="app">
@@ -154,6 +163,18 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
   </header>
 
   <section class="card live" aria-label="Série en cours">
+    <div class="mode-area"><span class="eyebrow">Mode de mesure</span>
+    <fieldset class="seg" id="modeSeg">
+      <legend style="position:absolute;left:-9999px">Mesure de la distance</legend>
+      <label><input type="radio" name="mode" value="gps"><span>GPS</span></label>
+      <label><input type="radio" name="mode" value="manual"><span>Manuel</span></label>
+    </fieldset>
+    <p class="hint" id="modeHint"></p>
+    <div class="gpsprep" id="gpsPrep" hidden>
+      <button class="btn" id="prepGps" type="button">Préparer le GPS</button>
+      <small id="gpsQuality" role="status">Attente du signal GPS</small>
+    </div>
+    </div>
     <div class="meta">
       <span class="eyebrow" id="repLabel">Série 1 / 6</span>
       <span class="target" id="repTarget">60 m · cible 8,50 s</span>
@@ -168,6 +189,7 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
       <span id="lgRun" hidden><i class="l-run"></i>Toi</span>
       <span><i class="l-ghost"></i>Allure cible</span>
     </div>
+    <output class="distance-live" id="distanceLive" hidden>0 / 60 m GPS estimés</output>
     <p class="status" id="status" aria-live="polite">Place-toi derrière la ligne, puis touche Départ.</p>
     <button class="main" id="main" type="button" data-phase="idle">Départ</button>
   </section>
@@ -182,7 +204,7 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
 
   <section class="card" aria-label="Séance">
     <div class="sec-head">
-      <h2>Séance</h2>
+      <h2>Ma séance</h2>
       <button class="link" id="reset" type="button">Effacer les résultats</button>
     </div>
     <div class="presets" role="group" aria-label="Distances rapides">
@@ -195,35 +217,27 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
       <div class="field"><label for="gReps">Séries</label><input class="in" id="gReps" inputmode="numeric" value="6"></div>
       <div class="field"><label for="gDist">Distance (m)</label><input class="in" id="gDist" inputmode="decimal" value="60"></div>
       <div class="field"><label for="gTime">Cible (s)</label><input class="in" id="gTime" inputmode="decimal" value="8,50"></div>
-      <button class="btn go" id="gen" type="button">Créer la séance (remplace la liste)</button>
+      <button class="btn go" id="gen" type="button">Appliquer la séance</button>
     </div>
+    <details class="plan-details"><summary>Personnaliser chaque série</summary>
     <div class="cols" aria-hidden="true"><span></span><span>Dist. m</span><span>Cible s</span><span style="text-align:right">Résultat</span><span></span></div>
     <div id="rows"></div>
     <button class="btn add" id="add" type="button">Ajouter une série</button>
+    </details>
   </section>
 
-  <section class="card set" aria-label="Réglages">
-    <h2>Réglages</h2>
-    <fieldset class="seg" id="modeSeg">
-      <legend style="position:absolute;left:-9999px">Mesure de la distance</legend>
-      <label><input type="radio" name="mode" value="gps"><span>GPS</span></label>
-      <label><input type="radio" name="mode" value="manual"><span>Manuel</span></label>
-    </fieldset>
-    <p class="hint" id="modeHint"></p>
-    <div class="gpsprep" id="gpsPrep" hidden>
-      <button class="btn" id="prepGps" type="button">Préparer le GPS</button>
-      <small id="gpsQuality" role="status">Attente du signal GPS</small>
-    </div>
+  <details class="card settings-advanced"><summary>Réglages avancés</summary><div class="set">
     <div class="nums">
       <div class="field"><label for="sCd">Départ (s)</label><input class="in" id="sCd" inputmode="numeric"></div>
       <div class="field"><label for="sRest">Récup (s)</label><input class="in" id="sRest" inputmode="numeric"></div>
       <div class="field"><label for="sTol">Marge (%)</label><input class="in" id="sTol" inputmode="decimal"></div>
     </div>
     <label class="check" for="sVoice"><input type="checkbox" id="sVoice">Annoncer le temps et le conseil à voix haute</label>
+    <button class="btn" id="testBeep" type="button">Tester le bip sonore</button>
     <label class="check" for="sAuto"><input type="checkbox" id="sAuto">Enchaîner les séries après la récupération et le compte à rebours</label>
     <label class="check" for="sVibrate"><input type="checkbox" id="sVibrate">Vibrations au départ et à l’arrivée (si compatibles)</label>
-    <p class="hint">Au-dessus de la cible : accélère. En dessous : ralentis. Le GPS reste une estimation. Pour un temps précis, utilise une distance balisée et l'arrivée manuelle ou des cellules photoélectriques.</p>
-  </section>
+    <p class="hint">GPS = distance estimée, sans garantie métrique. Pour 30 à 100 m : piste balisée et arrivée manuelle ou cellules.</p>
+  </div></details>
   <details class="card history" id="historyPanel">
     <summary>Historique des séances</summary>
     <div class="history-list" id="historyList"></div>
@@ -249,7 +263,7 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
     get: function () { try { return JSON.parse(localStorage.getItem(KEY)); } catch (e) { return null; } },
     set: function (v) { try { localStorage.setItem(KEY, JSON.stringify(v)); } catch (e) {} }
   };
-  var S = { reps: [], rest: 120, countdown: 3, tol: 2, mode: 'manual', voice: true, autoNext: false, vibrate: true };
+  var S = { reps: [], rest: 120, countdown: 3, tol: 2, mode: 'manual', voice: false, autoNext: false, vibrate: true };
   for (var i = 0; i < 6; i++) S.reps.push({ d: 60, t: 8.5 });
   var saved = store.get();
   if (saved && typeof saved === 'object') {
@@ -265,26 +279,63 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
   function buzz(pattern) { if (S.vibrate && navigator.vibrate) try { navigator.vibrate(pattern); } catch (e) {} }
   var R = function () { return S.reps[cur]; };
 
-  /* Son */
-  var ac = null;
+  /* Audio WebAudio : les signaux du décompte sont programmés à l'avance
+     sur l'horloge audio, sans attendre la précision des setTimeout JavaScript. */
+  var ac=null, soundQueue=[], countdownDeadline=0, countdownAudio=false;
   function ensureAudio() {
-    try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === 'suspended') ac.resume(); } catch (e) {}
-  }
-  function tone(freq, dur, vol, type, when) {
-    if (!ac) return;
     try {
-      var t = ac.currentTime + (when || 0), o = ac.createOscillator(), g = ac.createGain();
-      o.type = type || 'square'; o.frequency.value = freq;
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(vol, t + 0.01);
-      g.gain.setValueAtTime(vol, t + dur - 0.05);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-      o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t + dur + 0.03);
-    } catch (e) {}
+      ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+      if (ac.state==='suspended') return ac.resume();
+    } catch(e) { ac=null; }
+    return Promise.resolve();
   }
-  var tickBeep = function () { tone(660, 0.13, 0.5, 'sine'); };
-  var startBeep = function () { tone(1000, 0.9, 0.7, 'square'); tone(1500, 0.9, 0.22, 'square'); };
-  var endBeep = function () { tone(1400, 0.9, 0.7, 'square'); tone(2100, 0.9, 0.22, 'square'); };
+  function toneAt(freq,dur,vol,type,at,remember){
+    if(!ac || ac.state!=='running')return;
+    try {
+      var t=Math.max(at,ac.currentTime+0.008),o=ac.createOscillator(),g=ac.createGain();
+      o.type=type||'sine';o.frequency.value=freq;
+      g.gain.setValueAtTime(0.0001,t);
+      g.gain.exponentialRampToValueAtTime(Math.min(0.34,vol),t+0.012);
+      g.gain.setValueAtTime(Math.min(0.34,vol),Math.max(t+0.012,t+dur-0.035));
+      g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+      o.connect(g);g.connect(ac.destination);
+      o.start(t);o.stop(t+dur+0.03);
+      if(remember)soundQueue.push(o);
+      o.onended=function(){try{o.disconnect();g.disconnect();}catch(e){}};
+    }catch(e){}
+  }
+  function tone(freq,dur,vol,type,when){
+    if(ac)toneAt(freq,dur,vol,type,ac.currentTime+Math.max(0.01,when||0),false);
+  }
+  function cancelScheduledAudio(){
+    soundQueue.forEach(function(o){try{o.stop();}catch(e){}});
+    soundQueue=[];countdownAudio=false;
+  }
+  function timeOfAudioMark(mark){
+    try {
+      var ts=ac.getOutputTimestamp&&ac.getOutputTimestamp();
+      if(ts && ts.performanceTime>0 && ts.contextTime>=0)
+        return ts.performanceTime+(mark-ts.contextTime)*1000;
+    }catch(e){}
+    return performance.now()+(mark-ac.currentTime)*1000;
+  }
+  function scheduleStartSounds(seconds){
+    countdownAudio=false;
+    if(!ac||ac.state!=='running'){
+      countdownDeadline=performance.now()+seconds*1000;
+      return;
+    }
+    var start=ac.currentTime+0.22;
+    for(var i=0;i<seconds;i++)toneAt(660,0.12,0.25,'sine',start+i,true);
+    var goMark=start+seconds;
+    toneAt(980,0.42,0.34,'square',goMark,true);
+    toneAt(1480,0.42,0.13,'sine',goMark,true);
+    countdownDeadline=timeOfAudioMark(goMark);
+    countdownAudio=true;
+  }
+  var tickBeep=function(){tone(660,0.12,0.26,'sine');};
+  var startBeep=function(){tone(980,0.42,0.34,'square');tone(1480,0.42,0.13,'sine');};
+  var endBeep=function(){tone(1260,0.38,0.34,'sine');tone(1800,0.38,0.12,'sine');};
   function say(text) {
     if (!S.voice) return;
     try { var u = new SpeechSynthesisUtterance(text); u.lang = 'fr-FR'; u.rate = 1.05; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch (e) {}
@@ -298,7 +349,7 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
   /* GPS : l'arrivée n'est validée que par un nouveau relevé fiable.
      Une position et sa précision ne garantissent jamais une mesure métrique parfaite. */
   var gps = {id:null,last:null,prev:null,startPos:null,dist:0,est:0,err:false,
-    auto:false,goodFixes:0,timer:null,native:false};
+    auto:false,goodFixes:0,timer:null,native:false,wantsStart:false};
   function setPill(state,label){$('#gps').dataset.state=state;$('#gpsText').textContent=label;}
   function idlePill(){setPill('off',S.mode==='gps'?'GPS à préparer':'Mode manuel');}
   function hav(a,b){
@@ -366,7 +417,7 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
     if(gps.id===-1 && gps.native) gpsFail(msg||'Erreur de localisation Android');
   };
   function gpsFail(msg){
-    gps.err=true;gps.auto=false;stopGps();setPill('bad',msg);
+    gps.err=true;gps.auto=false;gps.wantsStart=false;stopGps();setPill('bad',msg);
     $('#gpsQuality').textContent=msg+' · chronométrage manuel disponible';
     if(phase==='running'||phase==='countdown')
       $('#status').textContent=msg+'. Touche Arrivée au passage de la ligne.';
@@ -376,7 +427,8 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
     var c=p.coords,t=fixTime(p);
     if(!isFinite(t)||!isFinite(c.latitude)||!isFinite(c.longitude)||!isFinite(c.accuracy))return;
     var fix={lat:c.latitude,lon:c.longitude,acc:c.accuracy,t:t,
-      v:(c.speed!==null&&isFinite(c.speed)&&c.speed>=0)?c.speed:null};
+      v:(c.speed!=null&&isFinite(c.speed)&&c.speed>=0&&
+         !(c.speedAccuracy!=null&&c.speedAccuracy>4))?c.speed:null};
     gps.last=fix;
     var ready=gpsReady(fix);
     if(ready) clearTimeout(gps.timer);
@@ -386,10 +438,14 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
           'GPS détecté mais précision ±'+Math.round(fix.acc)+' m · estimation')
       : 'GPS détecté, précision ±'+Math.round(fix.acc)+
         ' m · attends à ciel ouvert ou utilise Manuel';
+    if(ready && gps.wantsStart && phase==='idle'){
+      gps.wantsStart=false;
+      startCountdown();
+    }
     if(phase!=='running'||!gps.auto)return;
     var pv=gps.prev,dt=(fix.t-pv.t)/1000;
     if(dt<=0.12)return;
-    if(dt>3){gpsFail('GPS trop lent');return;}
+    if(dt>4){gpsFail('GPS trop lent, arrivée manuelle recommandée');return;}
     if(fix.acc>20)return;
     var displacement=hav(pv,fix),v=fix.v,step;
     if(v!==null){
@@ -400,12 +456,12 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
       if(pv.acc<=8&&fix.acc<=8&&displacement>step+12){
         gpsFail('Positions GPS incohérentes');return;
       }
-    }else if(fix.acc<=20 && pv.acc<=20 && displacement/dt<=16){
-      // Certains téléphones ne fournissent pas coords.speed. Recours aux positions,
-      // moins précises ; ne pas extrapoler l'arrivée entre deux mesures.
-      v=displacement/dt;
-      step=displacement;
-    }else{gpsFail('GPS trop imprécis pour mesurer le sprint');return;}
+    }else if(fix.acc<=9 && pv.acc<=9 && displacement/dt<=16){
+      // Pas de vitesse GNSS fiable : seules les positions de bonne qualité sont utiles.
+      // On écarte les petits déplacements compatibles avec le bruit à l'arrêt.
+      step=displacement>Math.max(1.2,(fix.acc+pv.acc)*0.6) ? displacement : 0;
+      v=step/dt;
+    }else{gpsFail('GPS insuffisant pour mesure automatique, utilise Arrivée');return;}
     var nextDist=pv.dist+Math.max(0,step);
     // Correction légère et bornée par le déplacement direct lorsqu'il est cohérent.
     if(gps.startPos&&fix.acc<=8&&gps.startPos.acc<=8&&nextDist>20){
@@ -449,10 +505,17 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
     $('#repTarget').textContent = nf(r.d, r.d % 1 ? 1 : 0) + ' m · cible ' + fmtT(r.t) + ' s';
     $('#endLbl').textContent = nf(r.d, r.d % 1 ? 1 : 0) + ' m';
     $('#lgRun').hidden = !showsRunner();
+    $('#distanceLive').hidden = S.mode!=='gps';
+    if(S.mode==='gps' && phase!=='running')
+      $('#distanceLive').textContent='GPS · '+(gpsReady(gps.last)?'signal reçu':'en attente de position');
     var labels = { idle: 'Départ', countdown: 'Annuler', running: 'Arrivée', done: cur < n - 1 ? 'Série suivante' : 'Terminer la séance', finished: 'Recommencer' };
     var m = $('#main'); m.textContent = labels[phase]; m.dataset.phase = phase;
     $('#clock').dataset.phase = phase;
     ['gReps', 'gDist', 'gTime', 'gen', 'add', 'reset'].forEach(function (id) { $('#' + id).disabled = inRun; });
+    document.querySelectorAll('[data-distance]').forEach(function(btn){
+      btn.disabled=inRun;
+      btn.dataset.active=S.reps.every(function(x){return x.d===Number(btn.dataset.distance);})?'true':'false';
+    });
     S.reps.forEach(function (rep, i) {
       var row = $('.row[data-i="' + i + '"]'); if (!row) return;
       row.dataset.current = (i === cur && phase !== 'finished') ? 'true' : 'false';
@@ -496,35 +559,46 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
   }
 
   /* Déroulé d'une série */
-  function startCountdown() {
-    ensureAudio();
+  function startCountdown(){
+    if(phase!=='idle')return;
     if(S.mode==='gps' && !gpsReady(gps.last)){
-      if(gps.id===null) startGps();
-      $('#status').textContent='Acquisition GPS : attends « GPS prêt » avant Départ.'+
-        ' Sinon passe en mode Manuel.';
+      gps.wantsStart=true;
+      if(gps.id===null)startGps();
+      $('#status').textContent='Recherche du GPS… Départ automatique quand le signal sera suffisant.';
       return;
     }
-    wake();
-    try { if(window.speechSynthesis) speechSynthesis.cancel(); } catch(e) {}
-    phase = 'countdown';
-    $('#verdict').hidden = true;
-    if (S.mode === 'gps') startGps(); else setPill('off', 'Mode manuel');
-    resetClock(); updateAll();
-    $('#status').textContent = S.countdown > 0 ? 'Prépare-toi. Le chrono démarre au gros bip.' : '';
-    var n = S.countdown;
-    (function tick() {
-      if (phase !== 'countdown') return;
-      if (n > 0) { $('#clock').textContent = n; tickBeep(); n--; cdT = setTimeout(tick, 1000); }
-      else go();
-    })();
+    gps.wantsStart=false;
+    phase='countdown';wake();
+    $('#verdict').hidden=true;
+    try{if(window.speechSynthesis)speechSynthesis.cancel();}catch(e){}
+    resetClock();updateAll();
+    $('#status').textContent='Prépare-toi : départ au long bip.';
+    var n=S.countdown;
+    function arm(){
+      if(phase!=='countdown')return;
+      scheduleStartSounds(n);
+      function paint(){
+        if(phase!=='countdown')return;
+        var left=countdownDeadline-performance.now();
+        if(left<=0){
+          clearInterval(cdT);cdT=0;
+          go(countdownDeadline,countdownAudio);
+        }else{
+          $('#clock').textContent=String(Math.min(n,Math.ceil(left/1000)));
+        }
+      }
+      paint();cdT=setInterval(paint,30);
+    }
+    ensureAudio().then(arm,arm);
   }
-  function cancelCountdown() {
-    clearTimeout(cdT); stopGps(); unwake(); phase = 'idle'; idlePill(); resetClock(); updateAll();
-    $('#status').textContent = 'Départ annulé.';
+  function cancelCountdown(){
+    clearInterval(cdT);cdT=0;cancelScheduledAudio();gps.wantsStart=false;
+    stopGps();unwake();phase='idle';idlePill();resetClock();updateAll();
+    $('#status').textContent='Départ annulé.';
   }
-  function go(){
+  function go(plannedStart,soundScheduled){
     phase='running';
-    t0=performance.now();lastPaint=0;gps.dist=0;gps.est=0;gps.goodFixes=0;
+    t0=plannedStart||performance.now();lastPaint=0;gps.dist=0;gps.est=0;gps.goodFixes=0;
     gps.auto=false;
     if(S.mode==='gps'&&!gps.err){
       var gl=gps.last;
@@ -534,7 +608,10 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
           dist:0,acc:gl.acc};
       }else gpsFail('GPS non prêt au départ');
     }
-    startBeep();buzz([170,65,170]);updateAll();
+    if(!soundScheduled)startBeep();
+    // Le bip pré-programmé reste calé à l'horloge audio ; on garde ce t0 même si l'UI réagit tard.
+    soundQueue=[];countdownAudio=false;
+    buzz([170,65,170]);updateAll();
     $('#status').textContent=gps.auto?'Cours ! Distance GPS estimée.':
       'Cours ! Touche Arrivée à la ligne.';
     loop();
@@ -553,6 +630,7 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
       if(age>3){gpsFail('GPS interrompu');setMarkers(ghostP,null);return;}
       // L'animation estime 350 ms d'avance maximum ; elle ne termine jamais un sprint.
       gps.est=pv.dist+pv.v*Math.max(0,Math.min(age,0.35));
+      $('#distanceLive').textContent=nf(Math.min(pv.dist,r.d),1)+' / '+nf(r.d,r.d%1?1:0)+' m GPS estimés';
       setMarkers(ghostP,gps.est/r.d);
       $('#status').textContent=nf(Math.min(gps.est,r.d),1)+' / '+
         nf(r.d,r.d%1?1:0)+' m estimés · '+
@@ -605,6 +683,7 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
     clearInterval(restT);
     if (cur < S.reps.length - 1) {
       cur++; phase = 'idle'; $('#verdict').hidden = true; resetClock(); updateAll();
+      if(S.mode==='gps' && gps.id===null)startGps();
       $('#status').textContent = 'Place-toi derrière la ligne, puis touche Départ.';
     } else summary();
   }
@@ -634,7 +713,8 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
     updateAll();
   }
   function fullReset() {
-    clearTimeout(cdT); clearInterval(restT); cancelAnimationFrame(raf); stopGps(); unwake();
+    clearInterval(cdT);cancelScheduledAudio();gps.wantsStart=false;
+    clearInterval(restT);cancelAnimationFrame(raf);stopGps();unwake();
     results = []; cur = 0; phase = 'idle';
     $('#verdict').hidden = true; idlePill(); resetClock();
     $('#status').textContent = 'Place-toi derrière la ligne, puis touche Départ.';
@@ -653,11 +733,16 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
   $('#reset').addEventListener('click', fullReset);
   document.querySelectorAll('[data-distance]').forEach(function(btn){
     btn.addEventListener('click',function(){
-      var newD=Number(btn.dataset.distance),oldD=num($('#gDist').value),oldT=num($('#gTime').value);
-      $('#gDist').value=String(newD);
-      if(oldD>0&&oldT>0) $('#gTime').value=nf(oldT*newD/oldD);
-      $('#status').textContent='Distance '+newD+
-        ' m sélectionnée. Vérifie la cible puis crée la séance.';
+      if(phase==='running'||phase==='countdown')return;
+      var distance=Number(btn.dataset.distance);
+      var old=S.reps[0]||{d:60,t:8.5};
+      // Proportion de la vitesse moyenne seulement, cible modifiable avant la séance.
+      var target=Math.max(0.1,Math.round(old.t*distance/old.d*100)/100);
+      S.reps=S.reps.map(function(){return {d:distance,t:target};});
+      $('#gDist').value=String(distance);
+      $('#gTime').value=nf(target);
+      save();fullReset();
+      $('#status').textContent=distance+' m prêts. Cible : '+fmtT(target)+' s (modifiable).';
     });
   });
   $('#add').addEventListener('click', function () {
@@ -674,19 +759,22 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
   function modeHint(){
     $('#gpsPrep').hidden=S.mode!=='gps';
     $('#modeHint').textContent=S.mode==='gps'
-      ? 'Prépare le GPS avant de partir, téléphone sous ciel dégagé. L’arrivée automatique exige des relevés cohérents ; sinon touche Arrivée. Sur de courtes distances, le GPS du téléphone reste approximatif.'
-      : 'Tu touches Arrivée toi-même (ou un partenaire) au passage de la ligne. Mesure et marque la distance sur la piste.';
+      ? 'GPS estimé · fonctionne sans Internet dans l’APK. Signal à ciel ouvert requis.'
+      : 'Piste balisée · touche Arrivée au passage de la ligne.';
   }
   $('#prepGps').addEventListener('click',function(){
     if(gps.id!==null){
-      stopGps();gps.auto=false;gps.err=true;gps.last=null;idlePill();$('#gpsQuality').textContent='GPS arrêté';
+      stopGps();gps.auto=false;gps.err=true;gps.wantsStart=false;gps.last=null;
+      idlePill();$('#gpsQuality').textContent='GPS arrêté';
     }else startGps();
   });
   document.querySelectorAll('input[name="mode"]').forEach(function (el) {
     el.checked = el.value === S.mode;
     el.addEventListener('change', function () {
       if(gps.id!==null) stopGps();
+      gps.wantsStart=false;
       S.mode=el.value;save();modeHint();idlePill();gps.err=false;gps.auto=false;gps.last=null;updateAll();
+      if(S.mode==='gps' && phase==='idle')startGps();
       if (phase === 'idle') resetClock();
     });
   });
@@ -701,6 +789,14 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
   bindNum('sCd', 'countdown', 0, 15, true);
   bindNum('sRest', 'rest', 0, 900, true);
   bindNum('sTol', 'tol', 0, 20, false);
+  $('#testBeep').addEventListener('click',function(){
+    ensureAudio().then(function(){
+      startBeep();
+      $('#status').textContent='Bip test envoyé. Augmente le volume média si tu ne l’entends pas.';
+    },function(){
+      $('#status').textContent='Son impossible : autorise l’audio du téléphone.';
+    });
+  });
   $('#sVoice').checked = !!S.voice;
   $('#sVoice').addEventListener('change', function (e) { S.voice = e.target.checked; save(); });
   $('#sAuto').checked=!!S.autoNext;
@@ -743,8 +839,12 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
   });
   document.addEventListener('visibilitychange', function () { if (!document.hidden && (phase === 'countdown' || phase === 'running' || phase === 'done')) wake(); });
 
+  $('#gReps').value=String(S.reps.length);
+  $('#gDist').value=String(S.reps[0].d).replace('.',',');
+  $('#gTime').value=nf(S.reps[0].t);
   modeHint(); idlePill(); renderPlan(); resetClock(); renderHistory();
-  if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(function(){});
+  if(!window.SprintAndroidGPS && 'serviceWorker' in navigator && window.isSecureContext)
+    navigator.serviceWorker.register('./sw.js').catch(function(){});
 })();
 </script>
 
