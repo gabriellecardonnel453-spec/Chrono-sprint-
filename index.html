@@ -2,7 +2,7 @@
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#E8431A"><meta name="description" content="Chrono Sprint : mesure des sprints, séries et récupérations."><link rel="manifest" href="./manifest.webmanifest"><link rel="icon" href="./icon-512.png"><link rel="apple-touch-icon" href="./icon-512.png"><meta name="apple-mobile-web-app-title" content="Chrono Sprint"><meta name="apple-mobile-web-app-status-bar-style" content="default"><meta name="apple-mobile-web-app-capable" content="yes"><style>:root{color-scheme:light}html,body{margin:0}</style></head><body>
 <title>Chrono Sprint</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap">
+
 <style>
 /* Layout: une colonne de piste. Le chrono occupe le haut, la séance et les réglages se rangent dessous. */
 :root {
@@ -17,8 +17,8 @@
   --keep: #167A3B;
   --slow: #C01D4E;
   --warn: #B45309;
-  --f-display: 'Barlow Condensed', 'Arial Narrow', system-ui, sans-serif;
-  --f-body: 'Barlow', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --f-display: 'Arial Narrow', system-ui, sans-serif;
+  --f-body: system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -145,6 +145,15 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
 .history-actions .btn{flex:1}
 @media(max-width:380px){.cols,.row{grid-template-columns:20px 60px 65px minmax(0,1fr) 30px;gap:5px}.card{padding:14px}.x{width:30px}.clock{font-size:clamp(76px,24vw,110px)}}
 
+.mode-area{display:grid;gap:8px;margin-bottom:10px}
+.mode-area .hint{font-size:12px;line-height:1.3}
+.mode-area .seg label{padding:11px 8px}
+.distance-live{display:block;text-align:center;font:700 26px/1.1 var(--f-display);font-variant-numeric:tabular-nums;color:var(--accent);margin:4px 0}
+.plan-details{border-top:1px solid var(--line);margin-top:12px;padding-top:12px}
+.plan-details summary,.settings-advanced>summary{cursor:pointer;font:700 19px/1.2 var(--f-display);text-transform:uppercase}
+.plan-details[open] summary,.settings-advanced[open]>summary{margin-bottom:12px}
+.presets .btn[data-active="true"]{background:var(--ink);color:var(--bg)}
+.settings-advanced .set{margin-top:8px}
 </style>
 
 <main class="app">
@@ -154,6 +163,18 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
   </header>
 
   <section class="card live" aria-label="Série en cours">
+    <div class="mode-area"><span class="eyebrow">Mode de mesure</span>
+    <fieldset class="seg" id="modeSeg">
+      <legend style="position:absolute;left:-9999px">Mesure de la distance</legend>
+      <label><input type="radio" name="mode" value="gps"><span>GPS</span></label>
+      <label><input type="radio" name="mode" value="manual"><span>Manuel</span></label>
+    </fieldset>
+    <p class="hint" id="modeHint"></p>
+    <div class="gpsprep" id="gpsPrep" hidden>
+      <button class="btn" id="prepGps" type="button">Préparer le GPS</button>
+      <small id="gpsQuality" role="status">Attente du signal GPS</small>
+    </div>
+    </div>
     <div class="meta">
       <span class="eyebrow" id="repLabel">Série 1 / 6</span>
       <span class="target" id="repTarget">60 m · cible 8,50 s</span>
@@ -168,6 +189,7 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
       <span id="lgRun" hidden><i class="l-run"></i>Toi</span>
       <span><i class="l-ghost"></i>Allure cible</span>
     </div>
+    <output class="distance-live" id="distanceLive" hidden>0 / 60 m GPS estimés</output>
     <p class="status" id="status" aria-live="polite">Place-toi derrière la ligne, puis touche Départ.</p>
     <button class="main" id="main" type="button" data-phase="idle">Départ</button>
   </section>
@@ -182,7 +204,7 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
 
   <section class="card" aria-label="Séance">
     <div class="sec-head">
-      <h2>Séance</h2>
+      <h2>Ma séance</h2>
       <button class="link" id="reset" type="button">Effacer les résultats</button>
     </div>
     <div class="presets" role="group" aria-label="Distances rapides">
@@ -195,25 +217,16 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
       <div class="field"><label for="gReps">Séries</label><input class="in" id="gReps" inputmode="numeric" value="6"></div>
       <div class="field"><label for="gDist">Distance (m)</label><input class="in" id="gDist" inputmode="decimal" value="60"></div>
       <div class="field"><label for="gTime">Cible (s)</label><input class="in" id="gTime" inputmode="decimal" value="8,50"></div>
-      <button class="btn go" id="gen" type="button">Créer la séance (remplace la liste)</button>
+      <button class="btn go" id="gen" type="button">Appliquer la séance</button>
     </div>
+    <details class="plan-details"><summary>Personnaliser chaque série</summary>
     <div class="cols" aria-hidden="true"><span></span><span>Dist. m</span><span>Cible s</span><span style="text-align:right">Résultat</span><span></span></div>
     <div id="rows"></div>
     <button class="btn add" id="add" type="button">Ajouter une série</button>
+    </details>
   </section>
 
-  <section class="card set" aria-label="Réglages">
-    <h2>Réglages</h2>
-    <fieldset class="seg" id="modeSeg">
-      <legend style="position:absolute;left:-9999px">Mesure de la distance</legend>
-      <label><input type="radio" name="mode" value="gps"><span>GPS</span></label>
-      <label><input type="radio" name="mode" value="manual"><span>Manuel</span></label>
-    </fieldset>
-    <p class="hint" id="modeHint"></p>
-    <div class="gpsprep" id="gpsPrep" hidden>
-      <button class="btn" id="prepGps" type="button">Préparer le GPS</button>
-      <small id="gpsQuality" role="status">Attente du signal GPS</small>
-    </div>
+  <details class="card settings-advanced"><summary>Réglages avancés</summary><div class="set">
     <div class="nums">
       <div class="field"><label for="sCd">Départ (s)</label><input class="in" id="sCd" inputmode="numeric"></div>
       <div class="field"><label for="sRest">Récup (s)</label><input class="in" id="sRest" inputmode="numeric"></div>
@@ -222,8 +235,8 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
     <label class="check" for="sVoice"><input type="checkbox" id="sVoice">Annoncer le temps et le conseil à voix haute</label>
     <label class="check" for="sAuto"><input type="checkbox" id="sAuto">Enchaîner les séries après la récupération et le compte à rebours</label>
     <label class="check" for="sVibrate"><input type="checkbox" id="sVibrate">Vibrations au départ et à l’arrivée (si compatibles)</label>
-    <p class="hint">Au-dessus de la cible : accélère. En dessous : ralentis. Le GPS reste une estimation. Pour un temps précis, utilise une distance balisée et l'arrivée manuelle ou des cellules photoélectriques.</p>
-  </section>
+    <p class="hint">GPS = distance estimée, sans garantie métrique. Pour 30 à 100 m : piste balisée et arrivée manuelle ou cellules.</p>
+  </div></details>
   <details class="card history" id="historyPanel">
     <summary>Historique des séances</summary>
     <div class="history-list" id="historyList"></div>
