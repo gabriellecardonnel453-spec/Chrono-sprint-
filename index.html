@@ -348,7 +348,7 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
   /* GPS : l'arrivée n'est validée que par un nouveau relevé fiable.
      Une position et sa précision ne garantissent jamais une mesure métrique parfaite. */
   var gps = {id:null,last:null,prev:null,startPos:null,dist:0,est:0,err:false,
-    auto:false,goodFixes:0,timer:null,native:false};
+    auto:false,goodFixes:0,timer:null,native:false,wantsStart:false};
   function setPill(state,label){$('#gps').dataset.state=state;$('#gpsText').textContent=label;}
   function idlePill(){setPill('off',S.mode==='gps'?'GPS à préparer':'Mode manuel');}
   function hav(a,b){
@@ -416,7 +416,7 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
     if(gps.id===-1 && gps.native) gpsFail(msg||'Erreur de localisation Android');
   };
   function gpsFail(msg){
-    gps.err=true;gps.auto=false;stopGps();setPill('bad',msg);
+    gps.err=true;gps.auto=false;gps.wantsStart=false;stopGps();setPill('bad',msg);
     $('#gpsQuality').textContent=msg+' · chronométrage manuel disponible';
     if(phase==='running'||phase==='countdown')
       $('#status').textContent=msg+'. Touche Arrivée au passage de la ligne.';
@@ -426,7 +426,8 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
     var c=p.coords,t=fixTime(p);
     if(!isFinite(t)||!isFinite(c.latitude)||!isFinite(c.longitude)||!isFinite(c.accuracy))return;
     var fix={lat:c.latitude,lon:c.longitude,acc:c.accuracy,t:t,
-      v:(c.speed!==null&&isFinite(c.speed)&&c.speed>=0)?c.speed:null};
+      v:(c.speed!=null&&isFinite(c.speed)&&c.speed>=0&&
+         !(c.speedAccuracy!=null&&c.speedAccuracy>4))?c.speed:null};
     gps.last=fix;
     var ready=gpsReady(fix);
     if(ready) clearTimeout(gps.timer);
@@ -436,10 +437,14 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
           'GPS détecté mais précision ±'+Math.round(fix.acc)+' m · estimation')
       : 'GPS détecté, précision ±'+Math.round(fix.acc)+
         ' m · attends à ciel ouvert ou utilise Manuel';
+    if(ready && gps.wantsStart && phase==='idle'){
+      gps.wantsStart=false;
+      startCountdown();
+    }
     if(phase!=='running'||!gps.auto)return;
     var pv=gps.prev,dt=(fix.t-pv.t)/1000;
     if(dt<=0.12)return;
-    if(dt>3){gpsFail('GPS trop lent');return;}
+    if(dt>4){gpsFail('GPS trop lent, arrivée manuelle recommandée');return;}
     if(fix.acc>20)return;
     var displacement=hav(pv,fix),v=fix.v,step;
     if(v!==null){
@@ -450,12 +455,12 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
       if(pv.acc<=8&&fix.acc<=8&&displacement>step+12){
         gpsFail('Positions GPS incohérentes');return;
       }
-    }else if(fix.acc<=20 && pv.acc<=20 && displacement/dt<=16){
-      // Certains téléphones ne fournissent pas coords.speed. Recours aux positions,
-      // moins précises ; ne pas extrapoler l'arrivée entre deux mesures.
-      v=displacement/dt;
-      step=displacement;
-    }else{gpsFail('GPS trop imprécis pour mesurer le sprint');return;}
+    }else if(fix.acc<=9 && pv.acc<=9 && displacement/dt<=16){
+      // Pas de vitesse GNSS fiable : seules les positions de bonne qualité sont utiles.
+      // On écarte les petits déplacements compatibles avec le bruit à l'arrêt.
+      step=displacement>Math.max(1.2,(fix.acc+pv.acc)*0.6) ? displacement : 0;
+      v=step/dt;
+    }else{gpsFail('GPS insuffisant pour mesure automatique, utilise Arrivée');return;}
     var nextDist=pv.dist+Math.max(0,step);
     // Correction légère et bornée par le déplacement direct lorsqu'il est cohérent.
     if(gps.startPos&&fix.acc<=8&&gps.startPos.acc<=8&&nextDist>20){
@@ -499,6 +504,9 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
     $('#repTarget').textContent = nf(r.d, r.d % 1 ? 1 : 0) + ' m · cible ' + fmtT(r.t) + ' s';
     $('#endLbl').textContent = nf(r.d, r.d % 1 ? 1 : 0) + ' m';
     $('#lgRun').hidden = !showsRunner();
+    $('#distanceLive').hidden = S.mode!=='gps';
+    if(S.mode==='gps' && phase!=='running')
+      $('#distanceLive').textContent='GPS · '+(gpsReady(gps.last)?'signal reçu':'en attente de position');
     var labels = { idle: 'Départ', countdown: 'Annuler', running: 'Arrivée', done: cur < n - 1 ? 'Série suivante' : 'Terminer la séance', finished: 'Recommencer' };
     var m = $('#main'); m.textContent = labels[phase]; m.dataset.phase = phase;
     $('#clock').dataset.phase = phase;
@@ -549,10 +557,12 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
   function startCountdown(){
     if(phase!=='idle')return;
     if(S.mode==='gps' && !gpsReady(gps.last)){
+      gps.wantsStart=true;
       if(gps.id===null)startGps();
-      $('#status').textContent='GPS en recherche : attends le signal vert ou choisis Manuel.';
+      $('#status').textContent='Recherche du GPS… Départ automatique quand le signal sera suffisant.';
       return;
     }
+    gps.wantsStart=false;
     phase='countdown';wake();
     $('#verdict').hidden=true;
     try{if(window.speechSynthesis)speechSynthesis.cancel();}catch(e){}
@@ -577,7 +587,7 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
     ensureAudio().then(arm,arm);
   }
   function cancelCountdown(){
-    clearInterval(cdT);cdT=0;cancelScheduledAudio();
+    clearInterval(cdT);cdT=0;cancelScheduledAudio();gps.wantsStart=false;
     stopGps();unwake();phase='idle';idlePill();resetClock();updateAll();
     $('#status').textContent='Départ annulé.';
   }
@@ -615,6 +625,7 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
       if(age>3){gpsFail('GPS interrompu');setMarkers(ghostP,null);return;}
       // L'animation estime 350 ms d'avance maximum ; elle ne termine jamais un sprint.
       gps.est=pv.dist+pv.v*Math.max(0,Math.min(age,0.35));
+      $('#distanceLive').textContent=nf(Math.min(pv.dist,r.d),1)+' / '+nf(r.d,r.d%1?1:0)+' m GPS estimés';
       setMarkers(ghostP,gps.est/r.d);
       $('#status').textContent=nf(Math.min(gps.est,r.d),1)+' / '+
         nf(r.d,r.d%1?1:0)+' m estimés · '+
@@ -667,6 +678,7 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
     clearInterval(restT);
     if (cur < S.reps.length - 1) {
       cur++; phase = 'idle'; $('#verdict').hidden = true; resetClock(); updateAll();
+      if(S.mode==='gps' && gps.id===null)startGps();
       $('#status').textContent = 'Place-toi derrière la ligne, puis touche Départ.';
     } else summary();
   }
@@ -696,7 +708,8 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
     updateAll();
   }
   function fullReset() {
-    clearTimeout(cdT); clearInterval(restT); cancelAnimationFrame(raf); stopGps(); unwake();
+    clearInterval(cdT);cancelScheduledAudio();gps.wantsStart=false;
+    clearInterval(restT);cancelAnimationFrame(raf);stopGps();unwake();
     results = []; cur = 0; phase = 'idle';
     $('#verdict').hidden = true; idlePill(); resetClock();
     $('#status').textContent = 'Place-toi derrière la ligne, puis touche Départ.';
@@ -741,14 +754,17 @@ h2 { margin: 0; font: 700 20px/1.1 var(--f-display); letter-spacing: .08em; text
   }
   $('#prepGps').addEventListener('click',function(){
     if(gps.id!==null){
-      stopGps();gps.auto=false;gps.err=true;gps.last=null;idlePill();$('#gpsQuality').textContent='GPS arrêté';
+      stopGps();gps.auto=false;gps.err=true;gps.wantsStart=false;gps.last=null;
+      idlePill();$('#gpsQuality').textContent='GPS arrêté';
     }else startGps();
   });
   document.querySelectorAll('input[name="mode"]').forEach(function (el) {
     el.checked = el.value === S.mode;
     el.addEventListener('change', function () {
       if(gps.id!==null) stopGps();
+      gps.wantsStart=false;
       S.mode=el.value;save();modeHint();idlePill();gps.err=false;gps.auto=false;gps.last=null;updateAll();
+      if(S.mode==='gps' && phase==='idle')startGps();
       if (phase === 'idle') resetClock();
     });
   });
